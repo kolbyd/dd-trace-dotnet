@@ -199,7 +199,7 @@ internal static class XUnitIntegration
                 }
                 else
                 {
-                    if (testCaseMetadata != null)
+                    if (testCaseMetadata is not null)
                     {
                         testCaseMetadata.HasAnException = true;
                         // ATF: AllAttemptsPassed clears only on actual failure (not skip)
