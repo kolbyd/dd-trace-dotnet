@@ -324,7 +324,7 @@ internal static class XUnitIntegration
                 TestRetryMode.AutomaticTestRetry => retryDecision is { } decision
                                                         ? decision == XUnitRetryExecutionDecision.Retry
                                                         : !isSkip && testCaseMetadata.HasAnException && GetRemainingAtrBudget() != 0,
-                _ => false
+                _ => false,
             };
         }
 
@@ -416,7 +416,7 @@ internal static class XUnitIntegration
         {
             TestRetryMode.AutomaticTestRetry => (testOptimization.FlakyRetryFeature?.GetFlakyRetryCount(firstExecutionDuration) ?? TestOptimizationFlakyRetryFeature.FlakyRetryCountDefault) + 1,
             TestRetryMode.AttemptToFix => testOptimization.TestManagementFeature?.TestManagementAttemptToFixRetryCount ?? TestOptimizationTestManagementFeature.TestManagementAttemptToFixRetryCountDefault,
-            _ => Common.GetNumberOfExecutionsForDuration(firstExecutionDuration)
+            _ => Common.GetNumberOfExecutionsForDuration(firstExecutionDuration),
         };
 
         testCaseMetadata.CountDownExecutionNumber = testCaseMetadata.TotalExecutions - 1;
