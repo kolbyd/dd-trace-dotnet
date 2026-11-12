@@ -9,7 +9,6 @@ using System.Text;
 using System.Threading.Tasks;
 using Datadog.Trace.ClrProfiler.AutoInstrumentation.Kafka;
 using Datadog.Trace.Configuration;
-using Datadog.Trace.DataStreamsMonitoring;
 using Datadog.Trace.TestHelpers;
 using Datadog.Trace.TestHelpers.TestTracer;
 using FluentAssertions;
@@ -305,31 +304,6 @@ public class KafkaBaggageTests
 
         Baggage.Current.Should().BeSameAs(ambientBaggage);
         ambientBaggage.Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task DataStreamsScopeDoesNotChangeKafkaSpanServiceNames()
-    {
-        await using var tracer = CreateTracer();
-        string consumerService;
-        string producerService;
-        using (var consumer = CreateConsumerScope(tracer, null, hasHeaders: false))
-        {
-            consumerService = consumer.Span.ServiceName;
-            KafkaHelper.CloseConsumerScope();
-        }
-
-        using (var producer = KafkaHelper.CreateProducerScope(tracer, new object(), null, false, true))
-        {
-            producerService = producer.Span.ServiceName;
-        }
-
-        using var worker = DataStreamsServiceScope.Begin("orders-worker");
-        using var scopedConsumer = CreateConsumerScope(tracer, null, hasHeaders: false);
-        scopedConsumer.Span.ServiceName.Should().Be(consumerService);
-        KafkaHelper.CloseConsumerScope();
-        using var scopedProducer = KafkaHelper.CreateProducerScope(tracer, new object(), null, false, true);
-        scopedProducer.Span.ServiceName.Should().Be(producerService);
     }
 
     private static ScopedTracer CreateTracer(bool createConsumerScopeEnabled = true)

@@ -6,6 +6,7 @@
 extern alias DatadogTraceManual;
 
 using System;
+using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Threading.Tasks;
@@ -35,22 +36,16 @@ namespace Datadog.Trace.Tests.ManualInstrumentation;
 
 public class ManualOnlyTests
 {
-    [Theory]
-    [InlineData(null)]
-    [InlineData("")]
-    [InlineData("   ")]
-    public void DataStreamsServiceScopeRejectsInvalidNames(string name)
-    {
-        Action act = () => DatadogTraceManual::Datadog.Trace.DataStreams.BeginServiceScope(name);
-        act.Should().Throw<ArgumentException>().WithParameterName("serviceName");
-    }
-
     [Fact]
-    public void DataStreamsServiceScopeIsInertWithoutInstrumentation()
+    public void DataStreamsCheckpointOptionsAreInertWithoutInstrumentation()
     {
-        using var scope = DatadogTraceManual::Datadog.Trace.DataStreams.BeginServiceScope("worker");
-        scope.Should().NotBeNull();
-        Datadog.Trace.DataStreamsMonitoring.DataStreamsServiceScope.CurrentServiceName.Should().BeNull();
+        var options = new DatadogTraceManual::Datadog.Trace.DataStreamsCheckpointOptions { ServiceNameOverride = "worker", PayloadSizeBytes = 42 };
+        using var scope = DatadogTraceManual::Datadog.Trace.Tracer.Instance.StartActive("send");
+        var headers = new Dictionary<string, string>();
+        new DatadogTraceManual::Datadog.Trace.SpanContextInjector().InjectIncludingDsm(headers, (carrier, key, value) => carrier[key] = value, scope.Span.Context, "custom", "orders", options);
+        var extracted = new DatadogTraceManual::Datadog.Trace.SpanContextExtractor().ExtractIncludingDsm(headers, (carrier, key) => Array.Empty<string>(), "custom", "orders", options);
+        headers.Should().BeEmpty();
+        extracted.Should().BeNull();
     }
 
     [Fact]

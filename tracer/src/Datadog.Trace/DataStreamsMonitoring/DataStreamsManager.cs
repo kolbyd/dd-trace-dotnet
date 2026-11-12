@@ -18,6 +18,8 @@ using Datadog.Trace.DataStreamsMonitoring.TransactionTracking;
 using Datadog.Trace.Headers;
 using Datadog.Trace.Logging;
 using Datadog.Trace.PlatformHelpers;
+using Datadog.Trace.SourceGenerators;
+using Datadog.Trace.Util;
 using Datadog.Trace.Vendors.Serilog.Events;
 
 namespace Datadog.Trace.DataStreamsMonitoring;
@@ -42,7 +44,7 @@ internal sealed class DataStreamsManager
     private readonly bool _isLegacyDsmHeadersEnabled;
     private readonly bool _isInDefaultState;
 
-    private long _nodeHashBase; // note that this actually represents a `ulong` that we have done an unsafe cast for
+    private NodeHashSettings _nodeHashSettings = null!;
     private MutableSettings _previousMutableSettings;
     private string? _previousContainerTagsHash;
     private bool _isEnabled;
@@ -83,6 +85,9 @@ internal sealed class DataStreamsManager
 
     public bool IsTransactionTrackingEnabled => !_isInDefaultState && IsEnabled;
 
+    [TestingOnly]
+    internal IDataStreamsWriter? ExchangeWriterForTests(IDataStreamsWriter? writer) => Interlocked.Exchange(ref _writer, writer);
+
     /// <summary> Callback for AgentConfiguration updates </summary>
     private void UpdateHashWithContainerTags(AgentConfiguration conf)
     {
@@ -114,12 +119,7 @@ internal sealed class DataStreamsManager
     private void UpdateNodeHash(MutableSettings settings, string? containerTagsHash)
     {
         // We don't yet support primary tag in .NET yet
-        var value = HashHelper.CalculateNodeHashBase(settings.DefaultServiceName, settings.Environment, primaryTag: null, settings.ProcessTags?.SerializedTags, containerTagsHash);
-        // Working around the fact we can't do Interlocked.Exchange with the struct
-        // and also that we can't do Interlocked.Exchange with a ulong in < .NET 5
-        Interlocked.Exchange(
-            ref _nodeHashBase,
-            unchecked((long)value.Value)); // reinterpret as a long
+        Volatile.Write(ref _nodeHashSettings, new NodeHashSettings(settings, containerTagsHash));
     }
 
     public static DataStreamsManager Create(
@@ -230,7 +230,7 @@ internal sealed class DataStreamsManager
         }
 
         var writer = Volatile.Read(ref _writer);
-        var point = new BacklogPoint(tags, value, DateTimeOffset.UtcNow.ToUnixTimeNanoseconds(), DataStreamsServiceScope.CurrentServiceName);
+        var point = new BacklogPoint(tags, value, DateTimeOffset.UtcNow.ToUnixTimeNanoseconds());
         writer?.AddBacklog(point);
     }
 
@@ -276,13 +276,15 @@ internal sealed class DataStreamsManager
     /// <param name="edgeTags">Edge tags to set for the new pathway. MUST be sorted in alphabetical order</param>
     /// <param name="payloadSizeBytes">Payload size in bytes</param>
     /// <param name="timeInQueueMs">Edge start time extracted from the message metadata. Used only if this is start of the pathway</param>
+    /// <param name="serviceNameOverride">The service name to use for this checkpoint, or null to use the configured service.</param>
     /// <returns>If disabled, returns <c>null</c>. Otherwise returns a new <see cref="PathwayContext"/></returns>
     public PathwayContext? SetCheckpoint(
         in PathwayContext? parentPathway,
         CheckpointKind checkpointKind,
         EdgeTags edgeTags,
         long payloadSizeBytes,
-        long timeInQueueMs)
+        long timeInQueueMs,
+        string? serviceNameOverride = null)
     {
         if (!IsEnabled)
         {
@@ -291,7 +293,11 @@ internal sealed class DataStreamsManager
 
         try
         {
-            var serviceNameOverride = DataStreamsServiceScope.CurrentServiceName;
+            if (StringUtil.IsNullOrEmpty(serviceNameOverride))
+            {
+                serviceNameOverride = null;
+            }
+
             var previousContext = parentPathway;
             if (previousContext == null && checkpointKind == CheckpointKind.Produce)
             {
@@ -308,14 +314,10 @@ internal sealed class DataStreamsManager
             var edgeStartNs = previousContext == null && timeInQueueMs > 0 ? nowNs - (timeInQueueMs * 1_000_000) : nowNs;
             var pathwayStartNs = previousContext?.PathwayStart ?? edgeStartNs;
 
-            // Don't blame me, blame the fact we can't do Volatile.Read with a ulong in .NET FX...
-            var nodeHashBase = new NodeHashBase(unchecked((ulong)Volatile.Read(ref _nodeHashBase)));
-
-            // Java continues the default base hash with the override before hashing edge tags.
-            // Avoid replacing the shared EdgeTags cache for each worker service.
+            var hashSettings = Volatile.Read(ref _nodeHashSettings);
             var nodeHash = serviceNameOverride is null
-                               ? edgeTags.GetNodeHash(nodeHashBase)
-                               : HashHelper.CalculateNodeHash(HashHelper.AddServiceOverride(in nodeHashBase, serviceNameOverride), edgeTags.Tags);
+                               ? edgeTags.GetNodeHash(hashSettings.DefaultHash)
+                               : HashHelper.CalculateNodeHash(hashSettings.GetHash(serviceNameOverride), edgeTags.Tags);
 
             var parentHash = previousContext?.Hash ?? default;
             var pathwayHash = HashHelper.CalculatePathwayHash(nodeHash, parentHash);
@@ -418,5 +420,24 @@ internal sealed class DataStreamsManager
 
         weight = 0;
         return false;
+    }
+
+    private sealed class NodeHashSettings
+    {
+        private readonly string? _environment;
+        private readonly string? _processTags;
+        private readonly string? _containerTagsHash;
+
+        public NodeHashSettings(MutableSettings settings, string? containerTagsHash)
+        {
+            _environment = settings.Environment;
+            _processTags = settings.ProcessTags?.SerializedTags;
+            _containerTagsHash = containerTagsHash;
+            DefaultHash = GetHash(settings.DefaultServiceName);
+        }
+
+        public NodeHashBase DefaultHash { get; }
+
+        public NodeHashBase GetHash(string service) => HashHelper.CalculateNodeHashBase(service, _environment, primaryTag: null, _processTags, _containerTagsHash);
     }
 }

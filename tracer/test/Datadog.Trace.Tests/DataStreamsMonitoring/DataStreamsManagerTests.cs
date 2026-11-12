@@ -141,58 +141,42 @@ public class DataStreamsManagerTests
     }
 
     [Fact]
-    public void ServiceScope_CapturesIdentityAndChangesHash()
+    public void ExplicitServiceOverridesApplyOnlyToTheirCheckpoint()
     {
         var dsm = GetDataStreamManager(true, out var writer);
         var tags = new EdgeTags(["type:test"]);
         var defaultPathway = dsm.SetCheckpoint(null, CheckpointKind.Consume, tags, 0, 0);
-        PathwayContext? scopedPathway;
-        PathwayContext? secondScopedPathway;
-        using (DataStreamsServiceScope.Begin("worker-a"))
-        {
-            scopedPathway = dsm.SetCheckpoint(null, CheckpointKind.Consume, tags, 0, 0);
-            dsm.TrackBacklog("topic:test", 1);
-        }
-
-        using (DataStreamsServiceScope.Begin("worker-b"))
-        {
-            secondScopedPathway = dsm.SetCheckpoint(null, CheckpointKind.Consume, tags, 0, 0);
-        }
-
-        scopedPathway.Value.Hash.Value.Should().NotBe(defaultPathway.Value.Hash.Value);
-        secondScopedPathway.Value.Hash.Value.Should().NotBe(scopedPathway.Value.Hash.Value);
+        var first = dsm.SetCheckpoint(null, CheckpointKind.Consume, tags, 0, 0, "worker-a");
+        var second = dsm.SetCheckpoint(null, CheckpointKind.Consume, tags, 0, 0, "worker-b");
+        var empty = dsm.SetCheckpoint(null, CheckpointKind.Consume, tags, 0, 0, string.Empty);
+        var overrideBase = HashHelper.CalculateNodeHashBase("worker-a", "foo", primaryTag: null, processTags: null, containerTagsHash: null);
+        var expected = HashHelper.CalculatePathwayHash(HashHelper.CalculateNodeHash(overrideBase, tags.Tags), parentHash: default);
+        first.Value.Hash.Should().Be(expected);
+        first.Value.Hash.Value.Should().NotBe(defaultPathway.Value.Hash.Value);
+        second.Value.Hash.Value.Should().NotBe(first.Value.Hash.Value);
+        empty.Value.Hash.Value.Should().Be(defaultPathway.Value.Hash.Value);
         writer.Points.TryDequeue(out var defaultPoint).Should().BeTrue();
-        writer.Points.TryDequeue(out var scopedPoint).Should().BeTrue();
+        writer.Points.TryDequeue(out var firstPoint).Should().BeTrue();
+        writer.Points.TryDequeue(out var secondPoint).Should().BeTrue();
+        writer.Points.TryDequeue(out var emptyPoint).Should().BeTrue();
         defaultPoint.ServiceNameOverride.Should().BeNull();
-        scopedPoint.ServiceNameOverride.Should().Be("worker-a");
-        writer.Points.TryDequeue(out var secondScopedPoint).Should().BeTrue();
-        secondScopedPoint.ServiceNameOverride.Should().Be("worker-b");
-        writer.BacklogPoints.Should().ContainSingle().Which.ServiceNameOverride.Should().Be("worker-a");
-        dsm.TrackBacklog("topic:test", 2);
-        writer.BacklogPoints.Should().Contain(x => x.Value == 2 && x.ServiceNameOverride == null);
+        firstPoint.ServiceNameOverride.Should().Be("worker-a");
+        secondPoint.ServiceNameOverride.Should().Be("worker-b");
+        emptyPoint.ServiceNameOverride.Should().BeNull();
+        dsm.TrackBacklog("topic:test", 1);
+        writer.BacklogPoints.Should().ContainSingle().Which.Value.Should().Be(1);
     }
 
     [Fact]
-    public void ServiceScopes_PreservePropagatedParentAcrossWorkers()
+    public void ExplicitServicesPreservePropagatedParent()
     {
         var dsm = GetDataStreamManager(true, out var writer);
         var tags = new EdgeTags(["type:test"]);
         var headers = new TestHeadersCollection();
-        PathwayContext? upstream;
-        using (DataStreamsServiceScope.Begin("worker-a"))
-        {
-            upstream = dsm.SetCheckpoint(null, CheckpointKind.Produce, tags, 0, 0);
-            dsm.InjectPathwayContext(upstream, headers);
-        }
-
-        PathwayContext? downstream;
-        using (DataStreamsServiceScope.Begin("worker-b"))
-        {
-            var extracted = dsm.ExtractPathwayContext(headers);
-            extracted.Value.Hash.Value.Should().Be(upstream.Value.Hash.Value);
-            downstream = dsm.SetCheckpoint(extracted, CheckpointKind.Consume, tags, 0, 0);
-        }
-
+        var upstream = dsm.SetCheckpoint(null, CheckpointKind.Produce, tags, 0, 0, "worker-a");
+        dsm.InjectPathwayContext(upstream, headers);
+        var extracted = dsm.ExtractPathwayContext(headers);
+        var downstream = dsm.SetCheckpoint(extracted, CheckpointKind.Consume, tags, 0, 0, "worker-b");
         writer.Points.TryDequeue(out var first).Should().BeTrue();
         writer.Points.TryDequeue(out var second).Should().BeTrue();
         first.ServiceNameOverride.Should().Be("worker-a");

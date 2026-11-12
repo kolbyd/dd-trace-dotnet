@@ -42,8 +42,8 @@ public class DataStreamsAggregatorTests
     {
         await using var tracer = TracerHelper.Create();
         var aggregator = CreateAggregatorWithData(tracer, T1, T2);
-        aggregator.AddBacklog(new BacklogPoint("topic:a", 1, T1, "worker-a"));
-        aggregator.AddBacklog(new BacklogPoint("topic:b", 2, T1, "worker-b"));
+        aggregator.Add(new StatsPoint(["type:a"], new PathwayHash(1), default, T1, 0, 0, 1, "worker-a"));
+        aggregator.Add(new StatsPoint(["type:b"], new PathwayHash(2), default, T1, 0, 0, 1, "worker-b"));
         aggregator.ServiceNames.Should().BeEquivalentTo("worker-a", "worker-b");
         using var first = new MemoryStream();
         using var second = new MemoryStream();
@@ -60,7 +60,7 @@ public class DataStreamsAggregatorTests
         var aggregator = CreateAggregatorWithData(tracer, T1, T2);
         for (var i = 0; i < 1001; i++)
         {
-            aggregator.AddBacklog(new BacklogPoint("topic:a", 1, T1, "worker-" + i));
+            aggregator.Add(new StatsPoint(["type:a"], new PathwayHash((ulong)i), default, T1, 0, 0, 1, "worker-" + i));
         }
 
         aggregator.ServiceNames.Should().HaveCount(1001);

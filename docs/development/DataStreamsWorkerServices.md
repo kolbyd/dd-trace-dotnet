@@ -1,19 +1,36 @@
-# Service scopes for Data Streams Monitoring
+# Manual Data Streams Monitoring checkpoints
 
-A process hosting multiple workers can assign a stable Data Streams Monitoring (DSM) service name to each worker's execution. Set the scope around the work, regardless of the transport it uses:
+A process hosting multiple workers can specify a stable service name for each manually recorded Data Streams Monitoring (DSM) checkpoint. The options apply only to the checkpoint created by that call. They do not change automatic Kafka checkpoints, backlog, APM span service names, or process-wide service and profiling identity. Use low-cardinality names such as a fixed worker name.
+
+For a transport that is not automatically instrumented, propagate headers with the manual API. This example uses a dictionary as the carrier; use the transport's actual header collection and encoding in an application.
 
 ```csharp
 using Datadog.Trace;
+using System.Collections.Generic;
 
-async Task ExecuteWorkerAsync(IWorker worker, CancellationToken cancellationToken)
+var options = new DataStreamsCheckpointOptions
 {
-    using var service = DataStreams.BeginServiceScope(worker.ServiceName);
-    await worker.RunAsync(cancellationToken);
-}
+    ServiceNameOverride = "orders-worker",
+    PayloadSizeBytes = payload.Length,
+};
+
+// Send: create a span, then send the carrier alongside the payload.
+using var sendScope = Tracer.Instance.StartActive("send");
+var headers = new Dictionary<string, string>();
+new SpanContextInjector().InjectIncludingDsm(
+    headers, (carrier, key, value) => carrier[key] = value,
+    sendScope.Span.Context, "custom", "orders", options);
+
+// Receive: use the received headers before creating the consumer span.
+var parent = new SpanContextExtractor().ExtractIncludingDsm(
+    headers, (carrier, key) => carrier.TryGetValue(key, out var value)
+        ? new[] { value } : System.Array.Empty<string>(),
+    "custom", "orders", options);
+using var receiveScope = Tracer.Instance.StartActive("receive", new SpanCreationSettings { Parent = parent });
 ```
 
-The scope flows across `await` and restores the previous name when disposed. Dispose nested scopes in reverse order in the same logical execution context. Use a fixed, low-cardinality name for each logical worker, not a message ID, tenant, or other unbounded value. DSM uses the current scope when recording checkpoints and backlog; without a scope it uses the configured service. Background callbacks or work that suppresses execution context may not inherit the worker scope.
+Null options, or a null or empty service override, use the configured service. The default payload size is zero. These overloads adapt Go's per-checkpoint service and payload options to the existing .NET manual propagation API; they are not full Go API parity. Injection requires a usable span context, and extraction records a checkpoint only when a trace context is extracted. The existing Kafka temporary pathway recovery branch restores a pathway without creating another checkpoint, so options do not change that already-recorded checkpoint.
 
-The scope affects DSM service attribution. It does not change `DD_SERVICE`, APM span or Activity service names, or runtime and profile identity. Configure APM service naming separately if needed.
+Call these methods once per manually instrumented message edge. If transport instrumentation already records that edge, adding a manual checkpoint can duplicate it; use the manual checkpoint for edges without an automatic checkpoint and account for the Kafka recovery behavior above. Automatic Kafka instrumentation continues to use the configured service.
 
-This API requires the `Datadog.Trace` manual instrumentation package and a matching automatic tracer installation. The package alone does not install the automatic tracer. Enable Data Streams Monitoring and the relevant transport instrumentation in the automatic tracer.
+Install the Datadog.Trace manual instrumentation package and a matching automatic tracer, and enable DSM. The manual package alone leaves these operations inert.

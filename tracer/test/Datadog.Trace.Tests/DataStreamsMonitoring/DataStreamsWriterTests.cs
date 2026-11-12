@@ -159,8 +159,6 @@ public class DataStreamsWriterTests
         writer.Add(new StatsPoint(["type:a"], new PathwayHash(21), new PathwayHash(20), timestamp, 0, 0, 1, "worker-a"));
         writer.Add(new StatsPoint(["type:b"], new PathwayHash(31), new PathwayHash(30), timestamp, 0, 0, 1, "worker-b"));
         writer.AddBacklog(new BacklogPoint("topic:default", 1, timestamp));
-        writer.AddBacklog(new BacklogPoint("topic:a", 2, timestamp, "worker-a"));
-        writer.AddBacklog(new BacklogPoint("topic:b", 3, timestamp, "worker-b"));
         await writer.DisposeAsync();
 
         var payloads = await DeserializePayloadsAsync(api);
@@ -175,8 +173,6 @@ public class DataStreamsWriterTests
         aStats.Should().HaveCount(2);
         bStats.Should().HaveCount(2);
         payloads.Should().ContainSingle(x => x.Service == Service && x.Stats.Where(b => b.Backlogs != null).SelectMany(b => b.Backlogs).Any(b => b.Value == 1));
-        payloads.Should().ContainSingle(x => x.Service == "worker-a" && x.Stats.Where(b => b.Backlogs != null).SelectMany(b => b.Backlogs).Any(b => b.Value == 2));
-        payloads.Should().ContainSingle(x => x.Service == "worker-b" && x.Stats.Where(b => b.Backlogs != null).SelectMany(b => b.Backlogs).Any(b => b.Value == 3));
     }
 
     [Fact]

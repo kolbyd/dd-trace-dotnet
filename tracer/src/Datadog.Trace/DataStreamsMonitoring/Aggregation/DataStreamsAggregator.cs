@@ -61,12 +61,6 @@ internal sealed class DataStreamsAggregator(DataStreamsMessagePackFormatter form
 
     public void AddBacklog(in BacklogPoint point)
     {
-        if (point.ServiceNameOverride is { } service)
-        {
-            GetPartition(service).AddBacklogDefault(in point);
-            return;
-        }
-
         AddBacklogDefault(in point);
     }
 
