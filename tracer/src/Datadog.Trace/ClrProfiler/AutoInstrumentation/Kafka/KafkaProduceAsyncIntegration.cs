@@ -7,7 +7,6 @@ using System;
 using System.ComponentModel;
 using System.Threading;
 using Datadog.Trace.ClrProfiler.CallTarget;
-using Datadog.Trace.DataStreamsMonitoring;
 using Datadog.Trace.DuckTyping;
 using Datadog.Trace.Tagging;
 
@@ -59,7 +58,7 @@ namespace Datadog.Trace.ClrProfiler.AutoInstrumentation.Kafka
                     partition?.Topic,
                     message,
                     instance);
-                return new CallTargetState(scope, DataStreamsServiceScope.CurrentServiceName);
+                return new CallTargetState(scope);
             }
 
             return CallTargetState.GetDefault();
@@ -107,7 +106,7 @@ namespace Datadog.Trace.ClrProfiler.AutoInstrumentation.Kafka
                             k.ClusterId.Length == 0
                                 ? $"partition:{k.Partition},topic:{k.Topic},type:kafka_produce"
                                 : $"kafka_cluster_id:{k.ClusterId},partition:{k.Partition},topic:{k.Topic},type:kafka_produce");
-                        dataStreams.TrackBacklog(backlogTags, deliveryResult.Offset.Value, state.State as string);
+                        dataStreams.TrackBacklog(backlogTags, deliveryResult.Offset.Value);
                     }
                 }
             }

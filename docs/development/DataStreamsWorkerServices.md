@@ -1,28 +1,19 @@
-# Per-worker services for Data Streams Monitoring
+# Service scopes for Data Streams Monitoring
 
-A process that hosts several long-running Kafka workers can give each worker a stable service identity for Data Streams Monitoring. Begin the scope inside the worker's async method, before constructing its consumer and before consuming or producing messages:
+A process hosting multiple workers can assign a stable Data Streams Monitoring (DSM) service name to each worker's execution. Set the scope around the work, regardless of the transport it uses:
 
 ```csharp
 using Datadog.Trace;
 
-async Task RunAsync(CancellationToken cancellationToken)
+async Task ExecuteWorkerAsync(IWorker worker, CancellationToken cancellationToken)
 {
-    using var workerService = DataStreams.BeginServiceScope("orders-worker");
-    using var consumer = CreateConsumer();
-    using var producer = CreateProducer();
-
-    while (!cancellationToken.IsCancellationRequested)
-    {
-        var message = consumer.Consume(cancellationToken);
-        using var processing = Tracer.Instance.StartActive("orders.process");
-        processing.Span.ServiceName = "orders-worker";
-        await ProcessAsync(message, producer, cancellationToken);
-    }
+    using var service = DataStreams.BeginServiceScope(worker.ServiceName);
+    await worker.RunAsync(cancellationToken);
 }
 ```
 
-The scope flows across `await` and is restored when disposed. Use a fixed, low-cardinality name for each logical worker, not a topic partition, message ID, tenant, or other unbounded value. The scope does not change the process's `DD_SERVICE`. Kafka produce and consume spans created inside it use the scoped service; other spans retain their normal service unless explicitly assigned, as in the processing span above. Kafka delivery reports capture the producing operation's service, and automatic commit callbacks use the service active when the consumer was constructed. Construct each consumer inside the intended worker scope and do not share it across differently named workers.
+The scope flows across `await` and restores the previous name when disposed. Dispose nested scopes in reverse order in the same logical execution context. Use a fixed, low-cardinality name for each logical worker, not a message ID, tenant, or other unbounded value. DSM uses the current scope when recording checkpoints and backlog; without a scope it uses the configured service. Background callbacks or work that suppresses execution context may not inherit the worker scope.
 
-This feature requires both the fork's `Datadog.Trace` manual instrumentation package and a matching automatic tracer installation. The NuGet package alone does not install the automatic tracer. Enable Data Streams Monitoring and Kafka instrumentation in the automatic tracer as usual. Existing applications that do not create a worker service scope retain their configured service behavior.
+The scope affects DSM service attribution. It does not change `DD_SERVICE`, APM span or Activity service names, or runtime and profile identity. Configure APM service naming separately if needed.
 
-The service scope applies to Kafka spans and Data Streams checkpoints and backlog. It does not automatically rename arbitrary application spans or establish per-worker service attribution for other integrations or business transaction tracking. Trace-to-profile correlation continues to use the process runtime identity and span context. Profiles are not guaranteed to appear as separate worker services; per-worker profile presentation in the Datadog UI has not been validated.
+This API requires the `Datadog.Trace` manual instrumentation package and a matching automatic tracer installation. The package alone does not install the automatic tracer. Enable Data Streams Monitoring and the relevant transport instrumentation in the automatic tracer.

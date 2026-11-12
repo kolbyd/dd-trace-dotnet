@@ -44,6 +44,7 @@ public static class DataStreams
     /// <returns>A scope that restores the previous service name when disposed.</returns>
     /// <remarks>
     /// The scope flows across awaits. Dispose nested scopes in reverse order in the same logical execution context.
+    /// This scope affects Data Streams Monitoring attribution, not APM span service names.
     /// This API has no effect when the automatic tracer is not installed.
     /// </remarks>
     public static IDisposable BeginServiceScope(string serviceName)

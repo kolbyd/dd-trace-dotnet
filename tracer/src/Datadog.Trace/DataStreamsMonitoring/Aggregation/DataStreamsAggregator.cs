@@ -1,4 +1,4 @@
-﻿// <copyright file="DataStreamsAggregator.cs" company="Datadog">
+// <copyright file="DataStreamsAggregator.cs" company="Datadog">
 // Unless explicitly stated otherwise all files in this repository are licensed under the Apache 2 License.
 // This product includes software developed at Datadog (https://www.datadoghq.com/). Copyright 2017 Datadog, Inc.
 // </copyright>
@@ -8,7 +8,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Threading;
 using Datadog.Trace.DataStreamsMonitoring.TransactionTracking;
 using Datadog.Trace.DataStreamsMonitoring.Utils;
 using Datadog.Trace.SourceGenerators;
@@ -24,7 +23,6 @@ internal sealed class DataStreamsAggregator(DataStreamsMessagePackFormatter form
     // The inner dictionary is constrained in size by the number of unique hashes seen by the app
     // Unique hashes are unique paths from origin to here, which could be unbounded if there are loops
     // The outer dictionary is constrained by FlushInterval/BucketDuration + 1
-    private const int MaxServicePartitions = 1000;
     private readonly Dictionary<string, DataStreamsAggregator> _servicePartitions = new();
     private readonly Dictionary<long, Dictionary<ulong, StatsBucket>> _currentBuckets = new();
 
@@ -43,15 +41,9 @@ internal sealed class DataStreamsAggregator(DataStreamsMessagePackFormatter form
     private List<SerializableStatsBucket>? _statsToWrite;
     private List<SerializableBacklogBucket>? _backlogsToWrite;
 
-    private long _pointsDropped;
-
-    internal long PointsDropped => Interlocked.Read(ref _pointsDropped);
-
     internal List<string> ServiceNames => new(_servicePartitions.Keys);
 
     internal bool ShouldFlushTransactions => _dataStreamsTransactionContainer.ShouldFlush;
-
-    internal long TakeDroppedCount() => Interlocked.Exchange(ref _pointsDropped, 0);
 
     /// <summary>
     /// Add the stats point to the aggregated stats
@@ -60,7 +52,7 @@ internal sealed class DataStreamsAggregator(DataStreamsMessagePackFormatter form
     {
         if (point.ServiceNameOverride is { } service)
         {
-            GetPartition(service)?.AddDefault(in point);
+            GetPartition(service).AddDefault(in point);
             return;
         }
 
@@ -71,7 +63,7 @@ internal sealed class DataStreamsAggregator(DataStreamsMessagePackFormatter form
     {
         if (point.ServiceNameOverride is { } service)
         {
-            GetPartition(service)?.AddBacklogDefault(in point);
+            GetPartition(service).AddBacklogDefault(in point);
             return;
         }
 
@@ -232,17 +224,11 @@ internal sealed class DataStreamsAggregator(DataStreamsMessagePackFormatter form
         }
     }
 
-    private DataStreamsAggregator? GetPartition(string service)
+    private DataStreamsAggregator GetPartition(string service)
     {
         if (_servicePartitions.TryGetValue(service, out var partition))
         {
             return partition;
-        }
-
-        if (_servicePartitions.Count >= MaxServicePartitions)
-        {
-            Interlocked.Increment(ref _pointsDropped);
-            return null;
         }
 
         partition = new DataStreamsAggregator(_formatter, _bucketDurationMs, _sketchPool);

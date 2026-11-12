@@ -1,4 +1,4 @@
-﻿// <copyright file="DataStreamsWriter.cs" company="Datadog">
+// <copyright file="DataStreamsWriter.cs" company="Datadog">
 // Unless explicitly stated otherwise all files in this repository are licensed under the Apache 2 License.
 // This product includes software developed at Datadog (https://www.datadoghq.com/). Copyright 2017 Datadog, Inc.
 // </copyright>
@@ -86,7 +86,7 @@ internal sealed class DataStreamsWriter : IDataStreamsWriter
     /// Gets the number of points dropped due to a full buffer or disabled DSM.
     /// Public for testing only
     /// </summary>
-    public long PointsDropped => Interlocked.Read(ref _pointsDropped) + _aggregator.PointsDropped;
+    public long PointsDropped => Interlocked.Read(ref _pointsDropped);
 
     public static DataStreamsWriter Create(
         TracerSettings settings,
@@ -374,7 +374,7 @@ internal sealed class DataStreamsWriter : IDataStreamsWriter
             {
                 var data = new ArraySegment<byte>(_serializationBuffer.GetBuffer(), offset: 0, (int)_serializationBuffer.Length);
                 var success = await _api.SendAsync(data).ConfigureAwait(false);
-                var dropCount = Interlocked.Exchange(ref _pointsDropped, 0) + _aggregator.TakeDroppedCount();
+                var dropCount = Interlocked.Exchange(ref _pointsDropped, 0);
                 if (success)
                 {
                     Log.Debug("Flushed {Count}bytes to data streams intake. {Dropped} points were dropped since last flush", data.Count, dropCount);

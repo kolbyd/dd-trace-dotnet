@@ -308,38 +308,28 @@ public class KafkaBaggageTests
     }
 
     [Fact]
-    public async Task WorkerServiceAppliesOnlyToKafkaSpans()
+    public async Task DataStreamsScopeDoesNotChangeKafkaSpanServiceNames()
     {
         await using var tracer = CreateTracer();
+        string consumerService;
+        string producerService;
+        using (var consumer = CreateConsumerScope(tracer, null, hasHeaders: false))
+        {
+            consumerService = consumer.Span.ServiceName;
+            KafkaHelper.CloseConsumerScope();
+        }
+
+        using (var producer = KafkaHelper.CreateProducerScope(tracer, new object(), null, false, true))
+        {
+            producerService = producer.Span.ServiceName;
+        }
+
         using var worker = DataStreamsServiceScope.Begin("orders-worker");
-        using var unrelated = tracer.StartActiveInternal("application");
-        unrelated.Span.ServiceName.Should().NotBe("orders-worker");
-
-        using var consumer = CreateConsumerScope(tracer, null, hasHeaders: false);
-        consumer.Span.ServiceName.Should().Be("orders-worker");
+        using var scopedConsumer = CreateConsumerScope(tracer, null, hasHeaders: false);
+        scopedConsumer.Span.ServiceName.Should().Be(consumerService);
         KafkaHelper.CloseConsumerScope();
-
-        using var producer = KafkaHelper.CreateProducerScope(tracer, new object(), null, false, true);
-        producer.Span.ServiceName.Should().Be("orders-worker");
-        producer.Span.TraceId.Should().Be(unrelated.Span.TraceId);
-        producer.Span.Context.ParentId.Should().Be(unrelated.Span.SpanId);
-    }
-
-    [Fact]
-    public void CommitCallbackRetainsConsumerCreationService()
-    {
-        OffsetsCommittedCallbacks callback;
-        using (DataStreamsServiceScope.Begin("orders-worker"))
-        {
-            callback = new OffsetsCommittedCallbacks("group", DataStreamsServiceScope.CurrentServiceName);
-        }
-
-        using (DataStreamsServiceScope.Begin("other-worker"))
-        {
-            callback.ServiceName.Should().Be("orders-worker");
-        }
-
-        new OffsetsCommittedCallbacks("group", null).ServiceName.Should().BeNull();
+        using var scopedProducer = KafkaHelper.CreateProducerScope(tracer, new object(), null, false, true);
+        scopedProducer.Span.ServiceName.Should().Be(producerService);
     }
 
     private static ScopedTracer CreateTracer(bool createConsumerScopeEnabled = true)

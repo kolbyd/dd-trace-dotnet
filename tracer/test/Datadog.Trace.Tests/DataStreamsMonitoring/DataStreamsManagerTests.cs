@@ -1,4 +1,4 @@
-﻿// <copyright file="DataStreamsManagerTests.cs" company="Datadog">
+// <copyright file="DataStreamsManagerTests.cs" company="Datadog">
 // Unless explicitly stated otherwise all files in this repository are licensed under the Apache 2 License.
 // This product includes software developed at Datadog (https://www.datadoghq.com/). Copyright 2017 Datadog, Inc.
 // </copyright>
@@ -144,22 +144,31 @@ public class DataStreamsManagerTests
     public void ServiceScope_CapturesIdentityAndChangesHash()
     {
         var dsm = GetDataStreamManager(true, out var writer);
-        var tags = new EdgeTags(["type:kafka"]);
+        var tags = new EdgeTags(["type:test"]);
         var defaultPathway = dsm.SetCheckpoint(null, CheckpointKind.Consume, tags, 0, 0);
         PathwayContext? scopedPathway;
+        PathwayContext? secondScopedPathway;
         using (DataStreamsServiceScope.Begin("worker-a"))
         {
             scopedPathway = dsm.SetCheckpoint(null, CheckpointKind.Consume, tags, 0, 0);
             dsm.TrackBacklog("topic:test", 1);
         }
 
+        using (DataStreamsServiceScope.Begin("worker-b"))
+        {
+            secondScopedPathway = dsm.SetCheckpoint(null, CheckpointKind.Consume, tags, 0, 0);
+        }
+
         scopedPathway.Value.Hash.Value.Should().NotBe(defaultPathway.Value.Hash.Value);
+        secondScopedPathway.Value.Hash.Value.Should().NotBe(scopedPathway.Value.Hash.Value);
         writer.Points.TryDequeue(out var defaultPoint).Should().BeTrue();
         writer.Points.TryDequeue(out var scopedPoint).Should().BeTrue();
         defaultPoint.ServiceNameOverride.Should().BeNull();
         scopedPoint.ServiceNameOverride.Should().Be("worker-a");
+        writer.Points.TryDequeue(out var secondScopedPoint).Should().BeTrue();
+        secondScopedPoint.ServiceNameOverride.Should().Be("worker-b");
         writer.BacklogPoints.Should().ContainSingle().Which.ServiceNameOverride.Should().Be("worker-a");
-        dsm.TrackBacklog("topic:test", 2, null);
+        dsm.TrackBacklog("topic:test", 2);
         writer.BacklogPoints.Should().Contain(x => x.Value == 2 && x.ServiceNameOverride == null);
     }
 
@@ -167,7 +176,7 @@ public class DataStreamsManagerTests
     public void ServiceScopes_PreservePropagatedParentAcrossWorkers()
     {
         var dsm = GetDataStreamManager(true, out var writer);
-        var tags = new EdgeTags(["type:kafka"]);
+        var tags = new EdgeTags(["type:test"]);
         var headers = new TestHeadersCollection();
         PathwayContext? upstream;
         using (DataStreamsServiceScope.Begin("worker-a"))

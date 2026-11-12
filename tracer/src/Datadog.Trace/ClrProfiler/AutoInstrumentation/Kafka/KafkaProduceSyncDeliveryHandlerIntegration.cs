@@ -7,7 +7,6 @@ using System;
 using System.ComponentModel;
 using System.Reflection;
 using Datadog.Trace.ClrProfiler.CallTarget;
-using Datadog.Trace.DataStreamsMonitoring;
 using Datadog.Trace.DuckTyping;
 using Datadog.Trace.Logging;
 using Datadog.Trace.Tagging;
@@ -66,7 +65,7 @@ namespace Datadog.Trace.ClrProfiler.AutoInstrumentation.Kafka
                     return CallTargetState.GetDefault();
                 }
 
-                var newAction = CachedWrapperDelegate<TActionOfDeliveryReport>.CreateWrapper(handler, span, DataStreamsServiceScope.CurrentServiceName);
+                var newAction = CachedWrapperDelegate<TActionOfDeliveryReport>.CreateWrapper(handler, span);
 
                 Action<ITypedDeliveryHandlerShimAction> updateHandlerAction = inst => inst.Handler = newAction;
 
@@ -115,10 +114,9 @@ namespace Datadog.Trace.ClrProfiler.AutoInstrumentation.Kafka
         /// </summary>
         /// <param name="originalHandler">The original delivery report handler </param>
         /// <param name="span">A <see cref="Span"/> that can be manipulated when the action is invoked</param>
-        /// <param name="serviceName">The service captured when producing the message.</param>
         /// <typeparam name="TDeliveryReport">Type of the delivery report</typeparam>
         /// <returns>The wrapped action</returns>
-        internal static Action<TDeliveryReport> WrapAction<TDeliveryReport>(Action<TDeliveryReport> originalHandler, Span span, string serviceName)
+        internal static Action<TDeliveryReport> WrapAction<TDeliveryReport>(Action<TDeliveryReport> originalHandler, Span span)
         {
             return new Action<TDeliveryReport>(
                 value =>
@@ -154,7 +152,7 @@ namespace Datadog.Trace.ClrProfiler.AutoInstrumentation.Kafka
                                 k.ClusterId.Length == 0
                                     ? $"partition:{k.Partition},topic:{k.Topic},type:kafka_produce"
                                     : $"kafka_cluster_id:{k.ClusterId},partition:{k.Partition},topic:{k.Topic},type:kafka_produce");
-                            dataStreams.TrackBacklog(backlogTags, report.Offset.Value, serviceName);
+                            dataStreams.TrackBacklog(backlogTags, report.Offset.Value);
                         }
                     }
 
@@ -193,12 +191,12 @@ namespace Datadog.Trace.ClrProfiler.AutoInstrumentation.Kafka
                 _createWrapper = (CreateWrapperDelegate)wrapActionMethod.CreateDelegate(typeof(CreateWrapperDelegate));
             }
 
-            private delegate TActionDelegate CreateWrapperDelegate(TActionDelegate value, Span span, string serviceName);
+            private delegate TActionDelegate CreateWrapperDelegate(TActionDelegate value, Span span);
 
-            public static TActionDelegate CreateWrapper(TActionDelegate value, Span span, string serviceName)
+            public static TActionDelegate CreateWrapper(TActionDelegate value, Span span)
             {
                 // we call the delegate passing the instance of the previous delegate
-                return _createWrapper(value, span, serviceName);
+                return _createWrapper(value, span);
             }
         }
     }

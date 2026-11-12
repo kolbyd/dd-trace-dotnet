@@ -1,4 +1,4 @@
-﻿// <copyright file="DataStreamsAggregatorTests.cs" company="Datadog">
+// <copyright file="DataStreamsAggregatorTests.cs" company="Datadog">
 // Unless explicitly stated otherwise all files in this repository are licensed under the Apache 2 License.
 // This product includes software developed at Datadog (https://www.datadoghq.com/). Copyright 2017 Datadog, Inc.
 // </copyright>
@@ -54,7 +54,7 @@ public class DataStreamsAggregatorTests
     }
 
     [Fact]
-    public async Task ServicePartitions_BoundCardinalityAndCountDrops()
+    public async Task ServicePartitions_ProcessMoreThanOneThousandServices()
     {
         await using var tracer = TracerHelper.Create();
         var aggregator = CreateAggregatorWithData(tracer, T1, T2);
@@ -63,8 +63,14 @@ public class DataStreamsAggregatorTests
             aggregator.AddBacklog(new BacklogPoint("topic:a", 1, T1, "worker-" + i));
         }
 
-        aggregator.ServiceNames.Should().HaveCount(1000);
-        aggregator.PointsDropped.Should().Be(1);
+        aggregator.ServiceNames.Should().HaveCount(1001);
+        foreach (var service in aggregator.ServiceNames)
+        {
+            using var stream = new MemoryStream();
+            aggregator.SerializeService(stream, long.MaxValue, service).Should().BeTrue();
+        }
+
+        aggregator.ServiceNames.Should().BeEmpty();
     }
 
     [Fact]

@@ -1,4 +1,4 @@
-﻿// <copyright file="DataStreamsManager.cs" company="Datadog">
+// <copyright file="DataStreamsManager.cs" company="Datadog">
 // Unless explicitly stated otherwise all files in this repository are licensed under the Apache 2 License.
 // This product includes software developed at Datadog (https://www.datadoghq.com/). Copyright 2017 Datadog, Inc.
 // </copyright>
@@ -18,7 +18,6 @@ using Datadog.Trace.DataStreamsMonitoring.TransactionTracking;
 using Datadog.Trace.Headers;
 using Datadog.Trace.Logging;
 using Datadog.Trace.PlatformHelpers;
-using Datadog.Trace.SourceGenerators;
 using Datadog.Trace.Vendors.Serilog.Events;
 
 namespace Datadog.Trace.DataStreamsMonitoring;
@@ -83,9 +82,6 @@ internal sealed class DataStreamsManager
     public bool IsInDefaultState => _isInDefaultState;
 
     public bool IsTransactionTrackingEnabled => !_isInDefaultState && IsEnabled;
-
-    [TestingOnly]
-    internal IDataStreamsWriter? ExchangeWriterForTests(IDataStreamsWriter? writer) => Interlocked.Exchange(ref _writer, writer);
 
     /// <summary> Callback for AgentConfiguration updates </summary>
     private void UpdateHashWithContainerTags(AgentConfiguration conf)
@@ -227,9 +223,6 @@ internal sealed class DataStreamsManager
     }
 
     public void TrackBacklog(string tags, long value)
-        => TrackBacklog(tags, value, DataStreamsServiceScope.CurrentServiceName);
-
-    public void TrackBacklog(string tags, long value, string? serviceNameOverride)
     {
         if (!IsEnabled)
         {
@@ -237,7 +230,7 @@ internal sealed class DataStreamsManager
         }
 
         var writer = Volatile.Read(ref _writer);
-        var point = new BacklogPoint(tags, value, DateTimeOffset.UtcNow.ToUnixTimeNanoseconds(), serviceNameOverride);
+        var point = new BacklogPoint(tags, value, DateTimeOffset.UtcNow.ToUnixTimeNanoseconds(), DataStreamsServiceScope.CurrentServiceName);
         writer?.AddBacklog(point);
     }
 
