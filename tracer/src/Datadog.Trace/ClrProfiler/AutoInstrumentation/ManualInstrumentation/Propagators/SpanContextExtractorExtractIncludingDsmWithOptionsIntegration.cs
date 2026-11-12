@@ -40,9 +40,9 @@ public sealed class SpanContextExtractorExtractIncludingDsmWithOptionsIntegratio
         var extract = (Func<TCarrier, string, IEnumerable<string?>>)(object)getter!;
         var extractor = new SafeExtractor<TCarrier>(extract);
 
-        var checkpointOptions = options is null ? null : options.DuckCast<IDataStreamsCheckpointOptions>();
+        var checkpointOptions = options is null ? default : options.DuckCast<DataStreamsCheckpointOptionsProxy>();
         var tracer = Datadog.Trace.Tracer.Instance;
-        var extracted = SpanContextExtractor.Extract(tracer, carrier, extractor.SafeExtract, messageType, source, checkpointOptions?.ServiceNameOverride, checkpointOptions?.PayloadSizeBytes ?? 0);
+        var extracted = SpanContextExtractor.Extract(tracer, carrier, extractor.SafeExtract, messageType, source, checkpointOptions.ServiceNameOverride, checkpointOptions.PayloadSizeBytes);
         return new CallTargetState(scope: null, extracted);
     }
 

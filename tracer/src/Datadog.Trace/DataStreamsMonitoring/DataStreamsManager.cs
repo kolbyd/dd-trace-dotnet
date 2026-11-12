@@ -44,7 +44,7 @@ internal sealed class DataStreamsManager
     private readonly bool _isLegacyDsmHeadersEnabled;
     private readonly bool _isInDefaultState;
 
-    private NodeHashSettings _nodeHashSettings = null!;
+    private NodeHashSettings _nodeHashSettings;
     private MutableSettings _previousMutableSettings;
     private string? _previousContainerTagsHash;
     private bool _isEnabled;
@@ -70,7 +70,7 @@ internal sealed class DataStreamsManager
         _previousMutableSettings = tracerSettings.Manager.InitialMutableSettings;
         // even though the value will probably get updated by a callback when subscriptions happen just after,
         // we still need to initialize it to a value from initial settings in case no callback fire
-        UpdateNodeHash(_previousMutableSettings, containerTagsHash: null);
+        _nodeHashSettings = new NodeHashSettings(_previousMutableSettings, containerTagsHash: null);
         // subscribing to changes calls the callback immediately if a value is present
         discoveryService.SubscribeToChanges(UpdateHashWithContainerTags);
         _updateSubscription = tracerSettings.Manager.SubscribeToChanges(UpdateHashWithNewSettings);

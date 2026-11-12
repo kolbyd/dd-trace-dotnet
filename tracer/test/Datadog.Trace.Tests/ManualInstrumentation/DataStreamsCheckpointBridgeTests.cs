@@ -38,7 +38,7 @@ public class DataStreamsCheckpointBridgeTests
         {
             var headers = new Dictionary<string, string>();
             Action<Dictionary<string, string>, string, string> setter = (h, k, v) => h[k] = v;
-            Func<Dictionary<string, string>, string, IEnumerable<string>> getter = (h, k) => h.TryGetValue(k, out var value) ? new[] { value } : Array.Empty<string>();
+            Func<Dictionary<string, string>, string, IEnumerable<string>> getter = (h, k) => h.TryGetValue(k, out var value) ? [value] : [];
             var options = new ManualOptions { ServiceNameOverride = "producer", PayloadSizeBytes = 42 };
             var context = new SpanContext(traceId: 123, spanId: 456);
             CallTargetInvoker.BeginMethod<SpanContextInjectorInjectIncludingDsmWithOptionsIntegration, object, Dictionary<string, string>, Action<Dictionary<string, string>, string, string>, SpanContext, string, string, ManualOptions>(null, headers, setter, context, "custom", "orders", options);

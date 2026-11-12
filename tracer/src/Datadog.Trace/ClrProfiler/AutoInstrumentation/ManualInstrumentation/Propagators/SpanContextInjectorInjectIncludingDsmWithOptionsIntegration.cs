@@ -41,9 +41,9 @@ public sealed class SpanContextInjectorInjectIncludingDsmWithOptionsIntegration
             // so we wrap the method in a try/catch to ensure we don't throw
             var inject = (Action<TCarrier, string, string>)(object)setter!;
             var injector = new SafeInjector<TCarrier>(inject);
-            var checkpointOptions = options is null ? null : options.DuckCast<IDataStreamsCheckpointOptions>();
+            var checkpointOptions = options is null ? default : options.DuckCast<DataStreamsCheckpointOptionsProxy>();
             var tracer = Datadog.Trace.Tracer.Instance;
-            SpanContextInjector.Inject(tracer, carrier, injector.SafeInject, spanContext, messageType, target, checkpointOptions?.ServiceNameOverride, checkpointOptions?.PayloadSizeBytes ?? 0);
+            SpanContextInjector.Inject(tracer, carrier, injector.SafeInject, spanContext, messageType, target, checkpointOptions.ServiceNameOverride, checkpointOptions.PayloadSizeBytes);
         }
 
         return CallTargetState.GetDefault();

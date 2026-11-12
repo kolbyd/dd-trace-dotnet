@@ -1,15 +1,18 @@
-// <copyright file="IDataStreamsCheckpointOptions.cs" company="Datadog">
+// <copyright file="DataStreamsCheckpointOptionsProxy.cs" company="Datadog">
 // Unless explicitly stated otherwise all files in this repository are licensed under the Apache 2 License.
 // This product includes software developed at Datadog (https://www.datadoghq.com/). Copyright 2017 Datadog, Inc.
 // </copyright>
 
 #nullable enable
 
+using Datadog.Trace.DuckTyping;
+
 namespace Datadog.Trace.ClrProfiler.AutoInstrumentation.ManualInstrumentation.Propagators;
 
-internal interface IDataStreamsCheckpointOptions
+[DuckCopy]
+internal struct DataStreamsCheckpointOptionsProxy
 {
-    string? ServiceNameOverride { get; }
+    public string? ServiceNameOverride;
 
-    long PayloadSizeBytes { get; }
+    public long PayloadSizeBytes;
 }
