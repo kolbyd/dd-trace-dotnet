@@ -4,7 +4,6 @@
 // </copyright>
 
 using System;
-using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Datadog.Trace.ClrProfiler.AutoInstrumentation.Kafka;
@@ -32,10 +31,8 @@ public class KafkaWorkerServiceCallbackTests
         await using var tracer = TracerHelper.Create(settings);
         TracerRestorerAttribute.SetTracer(tracer);
         var manager = tracer.TracerManager.DataStreamsManager;
-        var writerField = typeof(DataStreamsManager).GetField("_writer", BindingFlags.NonPublic | BindingFlags.Instance);
-        var originalWriter = writerField.GetValue(manager);
         var writer = new DataStreamsManagerTests.DataStreamsWriterMock();
-        writerField.SetValue(manager, writer);
+        var originalWriter = manager.ExchangeWriterForTests(writer);
         try
         {
             var report = new Mock<IDeliveryReport>();
@@ -84,7 +81,7 @@ public class KafkaWorkerServiceCallbackTests
         }
         finally
         {
-            writerField.SetValue(manager, originalWriter);
+            manager.ExchangeWriterForTests(originalWriter);
         }
     }
 }

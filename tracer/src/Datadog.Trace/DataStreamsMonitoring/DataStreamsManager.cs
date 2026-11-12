@@ -18,6 +18,7 @@ using Datadog.Trace.DataStreamsMonitoring.TransactionTracking;
 using Datadog.Trace.Headers;
 using Datadog.Trace.Logging;
 using Datadog.Trace.PlatformHelpers;
+using Datadog.Trace.SourceGenerators;
 using Datadog.Trace.Vendors.Serilog.Events;
 
 namespace Datadog.Trace.DataStreamsMonitoring;
@@ -82,6 +83,9 @@ internal sealed class DataStreamsManager
     public bool IsInDefaultState => _isInDefaultState;
 
     public bool IsTransactionTrackingEnabled => !_isInDefaultState && IsEnabled;
+
+    [TestingOnly]
+    internal IDataStreamsWriter? ExchangeWriterForTests(IDataStreamsWriter? writer) => Interlocked.Exchange(ref _writer, writer);
 
     /// <summary> Callback for AgentConfiguration updates </summary>
     private void UpdateHashWithContainerTags(AgentConfiguration conf)

@@ -60,22 +60,22 @@ internal sealed class DataStreamsAggregator(DataStreamsMessagePackFormatter form
     {
         if (point.ServiceNameOverride is { } service)
         {
-            GetPartition(service)?.AddDefault(point);
+            GetPartition(service)?.AddDefault(in point);
             return;
         }
 
-        AddDefault(point);
+        AddDefault(in point);
     }
 
     public void AddBacklog(in BacklogPoint point)
     {
         if (point.ServiceNameOverride is { } service)
         {
-            GetPartition(service)?.AddBacklogDefault(point);
+            GetPartition(service)?.AddBacklogDefault(in point);
             return;
         }
 
-        AddBacklogDefault(point);
+        AddBacklogDefault(in point);
     }
 
     public bool AddTransaction(in DataStreamsTransactionInfo transaction)

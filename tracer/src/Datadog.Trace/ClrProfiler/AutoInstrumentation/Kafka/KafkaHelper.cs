@@ -59,13 +59,7 @@ namespace Datadog.Trace.ClrProfiler.AutoInstrumentation.Kafka
                     return null;
                 }
 
-                var (serviceName, serviceNameSource) = settings.Schema.Messaging.GetServiceNameMetadata(MessagingSchema.ServiceType.Kafka);
-                var scopedServiceName = DataStreamsServiceScope.CurrentServiceName;
-                if (scopedServiceName is not null)
-                {
-                    serviceName = scopedServiceName;
-                    serviceNameSource = ServiceNameMetadata.Manual;
-                }
+                var (serviceName, serviceNameSource) = GetServiceNameMetadata(settings.Schema.Messaging.GetServiceNameMetadata(MessagingSchema.ServiceType.Kafka));
 
                 KafkaTags tags = settings.Schema.Messaging.CreateKafkaTags(SpanKinds.Producer);
 
@@ -118,6 +112,12 @@ namespace Datadog.Trace.ClrProfiler.AutoInstrumentation.Kafka
             }
 
             return scope;
+        }
+
+        private static ServiceNameMetadata GetServiceNameMetadata(ServiceNameMetadata fallback)
+        {
+            var scopedServiceName = DataStreamsServiceScope.CurrentServiceName;
+            return scopedServiceName is null ? fallback : new ServiceNameMetadata(scopedServiceName, ServiceNameMetadata.Manual);
         }
 
         private static long GetMessageSize<T>(T message)
@@ -236,13 +236,7 @@ namespace Datadog.Trace.ClrProfiler.AutoInstrumentation.Kafka
                     }
                 }
 
-                var (serviceName, serviceNameSource) = tracer.CurrentTraceSettings.Schema.Messaging.GetServiceNameMetadata(MessagingSchema.ServiceType.Kafka);
-                var scopedServiceName = DataStreamsServiceScope.CurrentServiceName;
-                if (scopedServiceName is not null)
-                {
-                    serviceName = scopedServiceName;
-                    serviceNameSource = ServiceNameMetadata.Manual;
-                }
+                var (serviceName, serviceNameSource) = GetServiceNameMetadata(tracer.CurrentTraceSettings.Schema.Messaging.GetServiceNameMetadata(MessagingSchema.ServiceType.Kafka));
 
                 var tags = tracer.CurrentTraceSettings.Schema.Messaging.CreateKafkaTags(SpanKinds.Consumer);
 

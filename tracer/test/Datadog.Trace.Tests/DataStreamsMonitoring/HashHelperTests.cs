@@ -63,7 +63,7 @@ public class HashHelperTests
     {
         var baseHash = HashHelper.CalculateNodeHashBase("service", "env", null, null, null);
         var scopedBase = HashHelper.AddServiceOverride(baseHash, "worker");
-        var actual = HashHelper.CalculateNodeHash(scopedBase, new[] { "type:kafka" });
+        var actual = HashHelper.CalculateNodeHash(scopedBase, ["type:kafka"]);
         actual.Value.Should().Be(FnvHash64.GenerateHash("serviceenvworkertype:kafka", FnvHash64.Version.V1));
     }
 
