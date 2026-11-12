@@ -32,12 +32,13 @@ namespace Datadog.Trace.ClrProfiler.AutoInstrumentation.ManualInstrumentation.Pr
 public sealed class SpanContextExtractorExtractIncludingDsmWithOptionsIntegration
 {
     internal static CallTargetState OnMethodBegin<TTarget, TCarrier, TAction, TOptions>(TTarget instance, in TCarrier carrier, in TAction getter, string messageType, string source, TOptions options)
+        where TAction : notnull
     {
         TelemetryFactory.Metrics.Record(PublicApiUsage.SpanContextExtractor_ExtractIncludingDsm);
 
         // we can't trust that the customer honours the nullable reference types here,
         // so we wrap the method in a try/catch and ensure we always return non-null
-        var extract = (Func<TCarrier, string, IEnumerable<string?>>)(object)getter!;
+        var extract = (Func<TCarrier, string, IEnumerable<string?>>)(object)getter;
         var extractor = new SafeExtractor<TCarrier>(extract);
 
         var checkpointOptions = options is null ? default : options.DuckCast<DataStreamsCheckpointOptionsProxy>();

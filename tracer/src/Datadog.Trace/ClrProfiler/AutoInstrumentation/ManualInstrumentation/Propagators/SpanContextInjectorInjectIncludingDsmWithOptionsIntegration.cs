@@ -30,6 +30,7 @@ namespace Datadog.Trace.ClrProfiler.AutoInstrumentation.ManualInstrumentation.Pr
 public sealed class SpanContextInjectorInjectIncludingDsmWithOptionsIntegration
 {
     internal static CallTargetState OnMethodBegin<TTarget, TCarrier, TAction, TSpanContext, TOptions>(TTarget instance, in TCarrier carrier, in TAction setter, TSpanContext context, string messageType, string target, TOptions options)
+        where TAction : notnull
     {
         // The Injector.Inject method currently _only_ works with SpanContext objects
         // Therefore, there's no point calling inject unless we can remap it to a SpanContext
@@ -39,7 +40,7 @@ public sealed class SpanContextInjectorInjectIncludingDsmWithOptionsIntegration
         {
             // We can't trust that the customer function is safe,
             // so we wrap the method in a try/catch to ensure we don't throw
-            var inject = (Action<TCarrier, string, string>)(object)setter!;
+            var inject = (Action<TCarrier, string, string>)(object)setter;
             var injector = new SafeInjector<TCarrier>(inject);
             var checkpointOptions = options is null ? default : options.DuckCast<DataStreamsCheckpointOptionsProxy>();
             var tracer = Datadog.Trace.Tracer.Instance;

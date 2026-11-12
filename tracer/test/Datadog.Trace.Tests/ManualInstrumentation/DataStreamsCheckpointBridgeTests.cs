@@ -86,6 +86,14 @@ public class DataStreamsCheckpointBridgeTests
             recovered.State.Should().BeOfType<SpanContext>();
             ((SpanContext)recovered.State).PathwayContext.Should().NotBeNull();
             writer.Points.Should().BeEmpty();
+
+            var nullSetterHeaders = new Dictionary<string, string>();
+            CallTargetInvoker.BeginMethod<SpanContextInjectorInjectIncludingDsmWithOptionsIntegration, object, Dictionary<string, string>, Action<Dictionary<string, string>, string, string>, SpanContext, string, string, ManualOptions>(null, nullSetterHeaders, null, new SpanContext(123, 456), "custom", "orders", options);
+            nullSetterHeaders.Should().BeEmpty();
+            writer.Points.Should().ContainSingle();
+            var nullGetter = CallTargetInvoker.BeginMethod<SpanContextExtractorExtractIncludingDsmWithOptionsIntegration, object, Dictionary<string, string>, Func<Dictionary<string, string>, string, IEnumerable<string>>, string, string, ManualOptions>(null, headers, null, "custom", "orders", options);
+            nullGetter.State.Should().BeNull();
+            writer.Points.Should().ContainSingle();
         }
         finally
         {
