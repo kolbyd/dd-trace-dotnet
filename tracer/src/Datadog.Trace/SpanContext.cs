@@ -1,4 +1,4 @@
-﻿﻿// <copyright file="SpanContext.cs" company="Datadog">
+﻿// <copyright file="SpanContext.cs" company="Datadog">
 // Unless explicitly stated otherwise all files in this repository are licensed under the Apache 2 License.
 // This product includes software developed at Datadog (https://www.datadoghq.com/). Copyright 2017 Datadog, Inc.
 // </copyright>
@@ -524,11 +524,12 @@ namespace Datadog.Trace
         /// <param name="payloadSizeBytes">Payload size in bytes</param>
         /// <param name="timeInQueueMs">Edge start time extracted from the message metadata. Used only if this is start of the pathway</param>
         /// <param name="parent">The parent context, if known</param>
-        internal void SetCheckpoint(DataStreamsManager manager, CheckpointKind checkpointKind, EdgeTags edgeTags, long payloadSizeBytes, long timeInQueueMs, PathwayContext? parent)
+        /// <param name="serviceNameOverride">The service name to use for this checkpoint, or null to use the configured service.</param>
+        internal void SetCheckpoint(DataStreamsManager manager, CheckpointKind checkpointKind, EdgeTags edgeTags, long payloadSizeBytes, long timeInQueueMs, PathwayContext? parent, string serviceNameOverride = null)
         {
             if (manager != null)
             {
-                PathwayContext = manager.SetCheckpoint(parent, checkpointKind, edgeTags, payloadSizeBytes, timeInQueueMs);
+                PathwayContext = manager.SetCheckpoint(parent, checkpointKind, edgeTags, payloadSizeBytes, timeInQueueMs, serviceNameOverride);
             }
         }
 

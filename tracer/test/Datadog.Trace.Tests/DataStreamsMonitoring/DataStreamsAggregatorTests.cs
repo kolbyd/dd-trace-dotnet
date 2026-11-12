@@ -1,4 +1,4 @@
-﻿// <copyright file="DataStreamsAggregatorTests.cs" company="Datadog">
+// <copyright file="DataStreamsAggregatorTests.cs" company="Datadog">
 // Unless explicitly stated otherwise all files in this repository are licensed under the Apache 2 License.
 // This product includes software developed at Datadog (https://www.datadoghq.com/). Copyright 2017 Datadog, Inc.
 // </copyright>
@@ -36,6 +36,42 @@ public class DataStreamsAggregatorTests
 
     // Based on the go aggregator_tests
     // https://cs.github.com/DataDog/data-streams-go/blob/6772b163707c0a8ecc8c9a3b28e0dab7e0cf58d4/datastreams/aggregator_test.go#L28
+
+    [Fact]
+    public async Task ServicePartitions_AreFlushedSeparatelyAndRemoved()
+    {
+        await using var tracer = TracerHelper.Create();
+        var aggregator = CreateAggregatorWithData(tracer, T1, T2);
+        aggregator.Add(new StatsPoint(["type:a"], new PathwayHash(1), default, T1, 0, 0, 1, "worker-a"));
+        aggregator.Add(new StatsPoint(["type:b"], new PathwayHash(2), default, T1, 0, 0, 1, "worker-b"));
+        aggregator.ServiceNames.Should().BeEquivalentTo("worker-a", "worker-b");
+        using var first = new MemoryStream();
+        using var second = new MemoryStream();
+        aggregator.SerializeService(first, long.MaxValue, "worker-a").Should().BeTrue();
+        aggregator.SerializeService(second, long.MaxValue, "worker-b").Should().BeTrue();
+        aggregator.ServiceNames.Should().BeEmpty();
+        first.ToArray().Should().NotEqual(second.ToArray());
+    }
+
+    [Fact]
+    public async Task ServicePartitions_ProcessMoreThanOneThousandServices()
+    {
+        await using var tracer = TracerHelper.Create();
+        var aggregator = CreateAggregatorWithData(tracer, T1, T2);
+        for (var i = 0; i < 1001; i++)
+        {
+            aggregator.Add(new StatsPoint(["type:a"], new PathwayHash((ulong)i), default, T1, 0, 0, 1, "worker-" + i));
+        }
+
+        aggregator.ServiceNames.Should().HaveCount(1001);
+        foreach (var service in aggregator.ServiceNames)
+        {
+            using var stream = new MemoryStream();
+            aggregator.SerializeService(stream, long.MaxValue, service).Should().BeTrue();
+        }
+
+        aggregator.ServiceNames.Should().BeEmpty();
+    }
 
     [Fact]
     public async Task Aggregator_DoesNotFlushCurrentStats()

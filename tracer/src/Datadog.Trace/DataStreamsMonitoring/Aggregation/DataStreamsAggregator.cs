@@ -1,4 +1,4 @@
-﻿// <copyright file="DataStreamsAggregator.cs" company="Datadog">
+// <copyright file="DataStreamsAggregator.cs" company="Datadog">
 // Unless explicitly stated otherwise all files in this repository are licensed under the Apache 2 License.
 // This product includes software developed at Datadog (https://www.datadoghq.com/). Copyright 2017 Datadog, Inc.
 // </copyright>
@@ -18,11 +18,12 @@ namespace Datadog.Trace.DataStreamsMonitoring.Aggregation;
 /// Aggregates multiple <see cref="StatsPoint"/>s into their correct buckets
 /// Note that this class is *not* thread safe
 /// </summary>
-internal sealed class DataStreamsAggregator(DataStreamsMessagePackFormatter formatter, int bucketDurationMs)
+internal sealed class DataStreamsAggregator(DataStreamsMessagePackFormatter formatter, int bucketDurationMs, DDSketchPool? sketchPool = null)
 {
     // The inner dictionary is constrained in size by the number of unique hashes seen by the app
     // Unique hashes are unique paths from origin to here, which could be unbounded if there are loops
     // The outer dictionary is constrained by FlushInterval/BucketDuration + 1
+    private readonly Dictionary<string, DataStreamsAggregator> _servicePartitions = new();
     private readonly Dictionary<long, Dictionary<ulong, StatsBucket>> _currentBuckets = new();
 
     // The inner dictionary is similarly constrained
@@ -34,10 +35,13 @@ internal sealed class DataStreamsAggregator(DataStreamsMessagePackFormatter form
     private readonly DataStreamsTransactionContainer _dataStreamsTransactionContainer = new(1024);
 
     private readonly DataStreamsMessagePackFormatter _formatter = formatter;
-    private readonly DDSketchPool _sketchPool = new();
+    private readonly DDSketchPool _sketchPool = sketchPool ?? new();
+    private readonly int _bucketDurationMs = bucketDurationMs;
     private readonly long _bucketDurationInNs = ((long)bucketDurationMs) * 1_000_000;
     private List<SerializableStatsBucket>? _statsToWrite;
     private List<SerializableBacklogBucket>? _backlogsToWrite;
+
+    internal List<string> ServiceNames => new(_servicePartitions.Keys);
 
     internal bool ShouldFlushTransactions => _dataStreamsTransactionContainer.ShouldFlush;
 
@@ -46,27 +50,18 @@ internal sealed class DataStreamsAggregator(DataStreamsMessagePackFormatter form
     /// </summary>
     public void Add(in StatsPoint point)
     {
-        var currentBucketStartTime = BucketStartTimeForTimestamp(point.TimestampNs);
-        AddToBuckets(point, currentBucketStartTime, _currentBuckets);
+        if (point.ServiceNameOverride is { } service)
+        {
+            GetPartition(service).AddDefault(in point);
+            return;
+        }
 
-        var originTimestamp = point.TimestampNs - point.PathwayLatencyNs;
-        var originBucketStartTime = BucketStartTimeForTimestamp(originTimestamp);
-        AddToBuckets(point, originBucketStartTime, _originBuckets);
+        AddDefault(in point);
     }
 
     public void AddBacklog(in BacklogPoint point)
     {
-        var currentBucketStartTime = BucketStartTimeForTimestamp(point.TimestampNs);
-        if (!_backlogBuckets.TryGetValue(currentBucketStartTime, out var bucket))
-        {
-            bucket = new Dictionary<string, BacklogBucket>();
-            _backlogBuckets[currentBucketStartTime] = bucket;
-        }
-
-        if (!bucket.TryGetValue(point.Tags, out var group) || group.Value < point.Value)
-        {
-            bucket[point.Tags] = new BacklogBucket(point.Tags, point.Value);
-        }
+        AddBacklogDefault(in point);
     }
 
     public bool AddTransaction(in DataStreamsTransactionInfo transaction)
@@ -79,8 +74,9 @@ internal sealed class DataStreamsAggregator(DataStreamsMessagePackFormatter form
     /// </summary>
     /// <param name="stream">The buffer to write the stats into</param>
     /// <param name="maxBucketFlushTimeNs">Don't flush buckets that start (or include) this time (in Ns)</param>
+    /// <param name="serviceNameOverride">Service to write in the payload, or null for the default service.</param>
     /// <returns>True if data was serialized to the stream</returns>
-    public bool Serialize(Stream stream, long maxBucketFlushTimeNs)
+    public bool Serialize(Stream stream, long maxBucketFlushTimeNs, string? serviceNameOverride = null)
     {
         var statsToAdd = Export(maxBucketFlushTimeNs) ?? new();
         var backlogsToAdd = ExportBacklogs(maxBucketFlushTimeNs) ?? new();
@@ -88,13 +84,29 @@ internal sealed class DataStreamsAggregator(DataStreamsMessagePackFormatter form
         var transactionData = _dataStreamsTransactionContainer.GetDataAndReset();
         if (statsToAdd.Count > 0 || backlogsToAdd.Count > 0 || transactionData.Length > 0)
         {
-            _formatter.Serialize(stream, _bucketDurationInNs, statsToAdd, backlogsToAdd, transactionData);
+            _formatter.Serialize(stream, _bucketDurationInNs, statsToAdd, backlogsToAdd, transactionData, serviceNameOverride);
             Clear(statsToAdd, backlogsToAdd);
 
             return true;
         }
 
         return false;
+    }
+
+    internal bool SerializeService(Stream stream, long maxBucketFlushTimeNs, string service)
+    {
+        if (!_servicePartitions.TryGetValue(service, out var partition))
+        {
+            return false;
+        }
+
+        var result = partition.Serialize(stream, maxBucketFlushTimeNs, service);
+        if (partition._currentBuckets.Count == 0 && partition._originBuckets.Count == 0 && partition._backlogBuckets.Count == 0)
+        {
+            _servicePartitions.Remove(service);
+        }
+
+        return result;
     }
 
     internal List<SerializableBacklogBucket> ExportBacklogs(long maxBucketFlushTimeNs)
@@ -179,6 +191,43 @@ internal sealed class DataStreamsAggregator(DataStreamsMessagePackFormatter form
         {
             _backlogBuckets.Remove(backlogBucket.BucketStartTimeNs);
         }
+    }
+
+    private void AddDefault(in StatsPoint point)
+    {
+        var currentBucketStartTime = BucketStartTimeForTimestamp(point.TimestampNs);
+        AddToBuckets(point, currentBucketStartTime, _currentBuckets);
+
+        var originTimestamp = point.TimestampNs - point.PathwayLatencyNs;
+        var originBucketStartTime = BucketStartTimeForTimestamp(originTimestamp);
+        AddToBuckets(point, originBucketStartTime, _originBuckets);
+    }
+
+    private void AddBacklogDefault(in BacklogPoint point)
+    {
+        var currentBucketStartTime = BucketStartTimeForTimestamp(point.TimestampNs);
+        if (!_backlogBuckets.TryGetValue(currentBucketStartTime, out var bucket))
+        {
+            bucket = new Dictionary<string, BacklogBucket>();
+            _backlogBuckets[currentBucketStartTime] = bucket;
+        }
+
+        if (!bucket.TryGetValue(point.Tags, out var group) || group.Value < point.Value)
+        {
+            bucket[point.Tags] = new BacklogBucket(point.Tags, point.Value);
+        }
+    }
+
+    private DataStreamsAggregator GetPartition(string service)
+    {
+        if (_servicePartitions.TryGetValue(service, out var partition))
+        {
+            return partition;
+        }
+
+        partition = new DataStreamsAggregator(_formatter, _bucketDurationMs, _sketchPool);
+        _servicePartitions.Add(service, partition);
+        return partition;
     }
 
     private void AddToBuckets(

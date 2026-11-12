@@ -1,4 +1,4 @@
-﻿// <copyright file="DataStreamsWriter.cs" company="Datadog">
+// <copyright file="DataStreamsWriter.cs" company="Datadog">
 // Unless explicitly stated otherwise all files in this repository are licensed under the Apache 2 License.
 // This product includes software developed at Datadog (https://www.datadoghq.com/). Copyright 2017 Datadog, Inc.
 // </copyright>
@@ -353,28 +353,36 @@ internal sealed class DataStreamsWriter : IDataStreamsWriter
                               ? long.MaxValue // flush all buckets
                               : DateTimeOffset.UtcNow.ToUnixTimeNanoseconds(); // don't flush current bucket
 
-        bool wasDataWritten;
-        _serializationBuffer.SetLength(0); // reset the stream
-        using (var gzip = new GZipStream(_serializationBuffer, CompressionLevel.Fastest, leaveOpen: true))
+        await WritePayloadAsync(null).ConfigureAwait(false);
+        foreach (var service in _aggregator.ServiceNames)
         {
-            wasDataWritten = _aggregator.Serialize(gzip, flushTimeNs);
+            await WritePayloadAsync(service).ConfigureAwait(false);
         }
 
-        if (wasDataWritten && (Volatile.Read(ref _isSupported) == SupportState.Supported))
+        async Task WritePayloadAsync(string? service)
         {
-            // This flushes on the same thread as the processing loop
-            var data = new ArraySegment<byte>(_serializationBuffer.GetBuffer(), offset: 0, (int)_serializationBuffer.Length);
-
-            var success = await _api.SendAsync(data).ConfigureAwait(false);
-
-            var dropCount = Interlocked.Exchange(ref _pointsDropped, 0);
-            if (success)
+            bool wasDataWritten;
+            _serializationBuffer.SetLength(0);
+            using (var gzip = new GZipStream(_serializationBuffer, CompressionLevel.Fastest, leaveOpen: true))
             {
-                Log.Debug("Flushed {Count}bytes to data streams intake. {Dropped} points were dropped since last flush", data.Count, dropCount);
+                wasDataWritten = service is null
+                                     ? _aggregator.Serialize(gzip, flushTimeNs)
+                                     : _aggregator.SerializeService(gzip, flushTimeNs, service);
             }
-            else
+
+            if (wasDataWritten && (Volatile.Read(ref _isSupported) == SupportState.Supported))
             {
-                Log.Warning("Error flushing {Count}bytes to data streams intake. {Dropped} points were dropped since last flush", data.Count, dropCount);
+                var data = new ArraySegment<byte>(_serializationBuffer.GetBuffer(), offset: 0, (int)_serializationBuffer.Length);
+                var success = await _api.SendAsync(data).ConfigureAwait(false);
+                var dropCount = Interlocked.Exchange(ref _pointsDropped, 0);
+                if (success)
+                {
+                    Log.Debug("Flushed {Count}bytes to data streams intake. {Dropped} points were dropped since last flush", data.Count, dropCount);
+                }
+                else
+                {
+                    Log.Warning("Error flushing {Count}bytes to data streams intake. {Dropped} points were dropped since last flush", data.Count, dropCount);
+                }
             }
         }
     }

@@ -1,4 +1,4 @@
-﻿// <copyright file="DataStreamsManager.cs" company="Datadog">
+// <copyright file="DataStreamsManager.cs" company="Datadog">
 // Unless explicitly stated otherwise all files in this repository are licensed under the Apache 2 License.
 // This product includes software developed at Datadog (https://www.datadoghq.com/). Copyright 2017 Datadog, Inc.
 // </copyright>
@@ -18,6 +18,8 @@ using Datadog.Trace.DataStreamsMonitoring.TransactionTracking;
 using Datadog.Trace.Headers;
 using Datadog.Trace.Logging;
 using Datadog.Trace.PlatformHelpers;
+using Datadog.Trace.SourceGenerators;
+using Datadog.Trace.Util;
 using Datadog.Trace.Vendors.Serilog.Events;
 
 namespace Datadog.Trace.DataStreamsMonitoring;
@@ -42,7 +44,7 @@ internal sealed class DataStreamsManager
     private readonly bool _isLegacyDsmHeadersEnabled;
     private readonly bool _isInDefaultState;
 
-    private long _nodeHashBase; // note that this actually represents a `ulong` that we have done an unsafe cast for
+    private NodeHashSettings _nodeHashSettings;
     private MutableSettings _previousMutableSettings;
     private string? _previousContainerTagsHash;
     private bool _isEnabled;
@@ -68,7 +70,7 @@ internal sealed class DataStreamsManager
         _previousMutableSettings = tracerSettings.Manager.InitialMutableSettings;
         // even though the value will probably get updated by a callback when subscriptions happen just after,
         // we still need to initialize it to a value from initial settings in case no callback fire
-        UpdateNodeHash(_previousMutableSettings, containerTagsHash: null);
+        _nodeHashSettings = new NodeHashSettings(_previousMutableSettings, containerTagsHash: null);
         // subscribing to changes calls the callback immediately if a value is present
         discoveryService.SubscribeToChanges(UpdateHashWithContainerTags);
         _updateSubscription = tracerSettings.Manager.SubscribeToChanges(UpdateHashWithNewSettings);
@@ -82,6 +84,9 @@ internal sealed class DataStreamsManager
     public bool IsInDefaultState => _isInDefaultState;
 
     public bool IsTransactionTrackingEnabled => !_isInDefaultState && IsEnabled;
+
+    [TestingOnly]
+    internal IDataStreamsWriter? ExchangeWriterForTests(IDataStreamsWriter? writer) => Interlocked.Exchange(ref _writer, writer);
 
     /// <summary> Callback for AgentConfiguration updates </summary>
     private void UpdateHashWithContainerTags(AgentConfiguration conf)
@@ -114,12 +119,7 @@ internal sealed class DataStreamsManager
     private void UpdateNodeHash(MutableSettings settings, string? containerTagsHash)
     {
         // We don't yet support primary tag in .NET yet
-        var value = HashHelper.CalculateNodeHashBase(settings.DefaultServiceName, settings.Environment, primaryTag: null, settings.ProcessTags?.SerializedTags, containerTagsHash);
-        // Working around the fact we can't do Interlocked.Exchange with the struct
-        // and also that we can't do Interlocked.Exchange with a ulong in < .NET 5
-        Interlocked.Exchange(
-            ref _nodeHashBase,
-            unchecked((long)value.Value)); // reinterpret as a long
+        Volatile.Write(ref _nodeHashSettings, new NodeHashSettings(settings, containerTagsHash));
     }
 
     public static DataStreamsManager Create(
@@ -276,13 +276,15 @@ internal sealed class DataStreamsManager
     /// <param name="edgeTags">Edge tags to set for the new pathway. MUST be sorted in alphabetical order</param>
     /// <param name="payloadSizeBytes">Payload size in bytes</param>
     /// <param name="timeInQueueMs">Edge start time extracted from the message metadata. Used only if this is start of the pathway</param>
+    /// <param name="serviceNameOverride">The service name to use for this checkpoint, or null to use the configured service.</param>
     /// <returns>If disabled, returns <c>null</c>. Otherwise returns a new <see cref="PathwayContext"/></returns>
     public PathwayContext? SetCheckpoint(
         in PathwayContext? parentPathway,
         CheckpointKind checkpointKind,
         EdgeTags edgeTags,
         long payloadSizeBytes,
-        long timeInQueueMs)
+        long timeInQueueMs,
+        string? serviceNameOverride = null)
     {
         if (!IsEnabled)
         {
@@ -291,6 +293,11 @@ internal sealed class DataStreamsManager
 
         try
         {
+            if (StringUtil.IsNullOrEmpty(serviceNameOverride))
+            {
+                serviceNameOverride = null;
+            }
+
             var previousContext = parentPathway;
             if (previousContext == null && checkpointKind == CheckpointKind.Produce)
             {
@@ -307,11 +314,10 @@ internal sealed class DataStreamsManager
             var edgeStartNs = previousContext == null && timeInQueueMs > 0 ? nowNs - (timeInQueueMs * 1_000_000) : nowNs;
             var pathwayStartNs = previousContext?.PathwayStart ?? edgeStartNs;
 
-            // Don't blame me, blame the fact we can't do Volatile.Read with a ulong in .NET FX...
-            var nodeHashBase = new NodeHashBase(unchecked((ulong)Volatile.Read(ref _nodeHashBase)));
-
-            // Cached on the EdgeTags instance, recomputed when the base changes (settings updates).
-            var nodeHash = edgeTags.GetNodeHash(nodeHashBase);
+            var hashSettings = Volatile.Read(ref _nodeHashSettings);
+            var nodeHash = serviceNameOverride is null
+                               ? edgeTags.GetNodeHash(hashSettings.DefaultHash)
+                               : HashHelper.CalculateNodeHash(hashSettings.GetHash(serviceNameOverride), edgeTags.Tags);
 
             var parentHash = previousContext?.Hash ?? default;
             var pathwayHash = HashHelper.CalculatePathwayHash(nodeHash, parentHash);
@@ -330,7 +336,8 @@ internal sealed class DataStreamsManager
                     timestampNs: nowNs,
                     pathwayLatencyNs: pathwayLatencyNs,
                     edgeLatencyNs: edgeLatencyNs,
-                    payloadSizeBytes));
+                    payloadSizeBytes,
+                    serviceNameOverride));
 
             var pathway = new PathwayContext(
                 hash: pathwayHash,
@@ -413,5 +420,24 @@ internal sealed class DataStreamsManager
 
         weight = 0;
         return false;
+    }
+
+    private sealed class NodeHashSettings
+    {
+        private readonly string? _environment;
+        private readonly string? _processTags;
+        private readonly string? _containerTagsHash;
+
+        public NodeHashSettings(MutableSettings settings, string? containerTagsHash)
+        {
+            _environment = settings.Environment;
+            _processTags = settings.ProcessTags?.SerializedTags;
+            _containerTagsHash = containerTagsHash;
+            DefaultHash = GetHash(settings.DefaultServiceName);
+        }
+
+        public NodeHashBase DefaultHash { get; }
+
+        public NodeHashBase GetHash(string service) => HashHelper.CalculateNodeHashBase(service, _environment, primaryTag: null, _processTags, _containerTagsHash);
     }
 }

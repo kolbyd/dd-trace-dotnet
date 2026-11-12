@@ -1,4 +1,4 @@
-﻿// <copyright file="DataStreamsManagerTests.cs" company="Datadog">
+// <copyright file="DataStreamsManagerTests.cs" company="Datadog">
 // Unless explicitly stated otherwise all files in this repository are licensed under the Apache 2 License.
 // This product includes software developed at Datadog (https://www.datadoghq.com/). Copyright 2017 Datadog, Inc.
 // </copyright>
@@ -138,6 +138,51 @@ public class DataStreamsManagerTests
         var point = writer.BacklogPoints.Should().ContainSingle().Subject;
         point.Value.Should().Be(value);
         point.Tags.Should().Be(tags);
+    }
+
+    [Fact]
+    public void ExplicitServiceOverridesApplyOnlyToTheirCheckpoint()
+    {
+        var dsm = GetDataStreamManager(true, out var writer);
+        var tags = new EdgeTags(["type:test"]);
+        var defaultPathway = dsm.SetCheckpoint(null, CheckpointKind.Consume, tags, 0, 0);
+        var first = dsm.SetCheckpoint(null, CheckpointKind.Consume, tags, 0, 0, "worker-a");
+        var second = dsm.SetCheckpoint(null, CheckpointKind.Consume, tags, 0, 0, "worker-b");
+        var empty = dsm.SetCheckpoint(null, CheckpointKind.Consume, tags, 0, 0, string.Empty);
+        var overrideBase = HashHelper.CalculateNodeHashBase("worker-a", "foo", primaryTag: null, processTags: null, containerTagsHash: null);
+        var expected = HashHelper.CalculatePathwayHash(HashHelper.CalculateNodeHash(overrideBase, tags.Tags), parentHash: default);
+        first.Value.Hash.Should().Be(expected);
+        first.Value.Hash.Value.Should().NotBe(defaultPathway.Value.Hash.Value);
+        second.Value.Hash.Value.Should().NotBe(first.Value.Hash.Value);
+        empty.Value.Hash.Value.Should().Be(defaultPathway.Value.Hash.Value);
+        writer.Points.TryDequeue(out var defaultPoint).Should().BeTrue();
+        writer.Points.TryDequeue(out var firstPoint).Should().BeTrue();
+        writer.Points.TryDequeue(out var secondPoint).Should().BeTrue();
+        writer.Points.TryDequeue(out var emptyPoint).Should().BeTrue();
+        defaultPoint.ServiceNameOverride.Should().BeNull();
+        firstPoint.ServiceNameOverride.Should().Be("worker-a");
+        secondPoint.ServiceNameOverride.Should().Be("worker-b");
+        emptyPoint.ServiceNameOverride.Should().BeNull();
+        dsm.TrackBacklog("topic:test", 1);
+        writer.BacklogPoints.Should().ContainSingle().Which.Value.Should().Be(1);
+    }
+
+    [Fact]
+    public void ExplicitServicesPreservePropagatedParent()
+    {
+        var dsm = GetDataStreamManager(true, out var writer);
+        var tags = new EdgeTags(["type:test"]);
+        var headers = new TestHeadersCollection();
+        var upstream = dsm.SetCheckpoint(null, CheckpointKind.Produce, tags, 0, 0, "worker-a");
+        dsm.InjectPathwayContext(upstream, headers);
+        var extracted = dsm.ExtractPathwayContext(headers);
+        var downstream = dsm.SetCheckpoint(extracted, CheckpointKind.Consume, tags, 0, 0, "worker-b");
+        writer.Points.TryDequeue(out var first).Should().BeTrue();
+        writer.Points.TryDequeue(out var second).Should().BeTrue();
+        first.ServiceNameOverride.Should().Be("worker-a");
+        second.ServiceNameOverride.Should().Be("worker-b");
+        second.ParentHash.Value.Should().Be(upstream.Value.Hash.Value);
+        downstream.Value.Hash.Value.Should().NotBe(upstream.Value.Hash.Value);
     }
 
     [Fact]

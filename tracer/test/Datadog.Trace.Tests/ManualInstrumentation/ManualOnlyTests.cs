@@ -1,4 +1,4 @@
-﻿// <copyright file="ManualOnlyTests.cs" company="Datadog">
+// <copyright file="ManualOnlyTests.cs" company="Datadog">
 // Unless explicitly stated otherwise all files in this repository are licensed under the Apache 2 License.
 // This product includes software developed at Datadog (https://www.datadoghq.com/). Copyright 2017 Datadog, Inc.
 // </copyright>
@@ -6,6 +6,7 @@
 extern alias DatadogTraceManual;
 
 using System;
+using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Threading.Tasks;
@@ -35,6 +36,18 @@ namespace Datadog.Trace.Tests.ManualInstrumentation;
 
 public class ManualOnlyTests
 {
+    [Fact]
+    public void DataStreamsCheckpointOptionsAreInertWithoutInstrumentation()
+    {
+        var options = new DatadogTraceManual::Datadog.Trace.DataStreamsCheckpointOptions { ServiceNameOverride = "worker", PayloadSizeBytes = 42 };
+        using var scope = DatadogTraceManual::Datadog.Trace.Tracer.Instance.StartActive("send");
+        var headers = new Dictionary<string, string>();
+        new DatadogTraceManual::Datadog.Trace.SpanContextInjector().InjectIncludingDsm(headers, (carrier, key, value) => carrier[key] = value, scope.Span.Context, "custom", "orders", options);
+        var extracted = new DatadogTraceManual::Datadog.Trace.SpanContextExtractor().ExtractIncludingDsm(headers, (carrier, key) => Array.Empty<string>(), "custom", "orders", options);
+        headers.Should().BeEmpty();
+        extracted.Should().BeNull();
+    }
+
     [Fact]
     public void CreatingAManualSpanDoesNotCrash()
     {

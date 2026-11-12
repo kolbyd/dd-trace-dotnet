@@ -24,7 +24,7 @@ namespace Datadog.Trace
     {
         private static readonly IDatadogLogger Log = DatadogLogging.GetLoggerFor(typeof(SpanContextExtractor));
 
-        internal static SpanContext? Extract<TCarrier>(Tracer tracer, TCarrier carrier, Func<TCarrier, string, IEnumerable<string?>> getter, string? messageType = null, string? source = null)
+        internal static SpanContext? Extract<TCarrier>(Tracer tracer, TCarrier carrier, Func<TCarrier, string, IEnumerable<string?>> getter, string? messageType = null, string? source = null, string? serviceNameOverride = null, long payloadSizeBytes = 0)
         {
             if (messageType != null && source == null) { ThrowHelper.ThrowArgumentNullException(nameof(source)); }
             else if (messageType == null && source != null) { ThrowHelper.ThrowArgumentNullException(nameof(messageType)); }
@@ -47,7 +47,7 @@ namespace Datadog.Trace
                 {
                     var parentPathwayContext = dsm.ExtractPathwayContextAsBase64String(new CarrierWithDelegate<TCarrier>(carrier, getter));
                     var edgeTags = new EdgeTags(["direction:in", $"topic:{source}", $"type:{messageType}"], cacheNodeHash: false);
-                    spanContext.SetCheckpoint(dsm, CheckpointKind.Consume, edgeTags, payloadSizeBytes: 0, timeInQueueMs: 0, parentPathwayContext);
+                    spanContext.SetCheckpoint(dsm, CheckpointKind.Consume, edgeTags, payloadSizeBytes, timeInQueueMs: 0, parentPathwayContext, serviceNameOverride);
                 }
             }
 
