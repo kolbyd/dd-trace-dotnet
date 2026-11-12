@@ -11,11 +11,13 @@ internal readonly struct BacklogPoint
     public readonly string Tags;
     public readonly long Value;
     public readonly long TimestampNs;
+    public readonly string? ServiceNameOverride;
 
-    public BacklogPoint(string tags, long value, long timestampNs)
+    public BacklogPoint(string tags, long value, long timestampNs, string? serviceNameOverride = null)
     {
         Tags = tags;
         Value = value;
         TimestampNs = timestampNs;
+        ServiceNameOverride = serviceNameOverride;
     }
 }

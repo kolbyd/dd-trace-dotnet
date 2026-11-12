@@ -141,6 +141,58 @@ public class DataStreamsManagerTests
     }
 
     [Fact]
+    public void ServiceScope_CapturesIdentityAndChangesHash()
+    {
+        var dsm = GetDataStreamManager(true, out var writer);
+        var tags = new EdgeTags(["type:kafka"]);
+        var defaultPathway = dsm.SetCheckpoint(null, CheckpointKind.Consume, tags, 0, 0);
+        PathwayContext? scopedPathway;
+        using (DataStreamsServiceScope.Begin("worker-a"))
+        {
+            scopedPathway = dsm.SetCheckpoint(null, CheckpointKind.Consume, tags, 0, 0);
+            dsm.TrackBacklog("topic:test", 1);
+        }
+
+        scopedPathway.Value.Hash.Value.Should().NotBe(defaultPathway.Value.Hash.Value);
+        writer.Points.TryDequeue(out var defaultPoint).Should().BeTrue();
+        writer.Points.TryDequeue(out var scopedPoint).Should().BeTrue();
+        defaultPoint.ServiceNameOverride.Should().BeNull();
+        scopedPoint.ServiceNameOverride.Should().Be("worker-a");
+        writer.BacklogPoints.Should().ContainSingle().Which.ServiceNameOverride.Should().Be("worker-a");
+        dsm.TrackBacklog("topic:test", 2, null);
+        writer.BacklogPoints.Should().Contain(x => x.Value == 2 && x.ServiceNameOverride == null);
+    }
+
+    [Fact]
+    public void ServiceScopes_PreservePropagatedParentAcrossWorkers()
+    {
+        var dsm = GetDataStreamManager(true, out var writer);
+        var tags = new EdgeTags(["type:kafka"]);
+        var headers = new TestHeadersCollection();
+        PathwayContext? upstream;
+        using (DataStreamsServiceScope.Begin("worker-a"))
+        {
+            upstream = dsm.SetCheckpoint(null, CheckpointKind.Produce, tags, 0, 0);
+            dsm.InjectPathwayContext(upstream, headers);
+        }
+
+        PathwayContext? downstream;
+        using (DataStreamsServiceScope.Begin("worker-b"))
+        {
+            var extracted = dsm.ExtractPathwayContext(headers);
+            extracted.Value.Hash.Value.Should().Be(upstream.Value.Hash.Value);
+            downstream = dsm.SetCheckpoint(extracted, CheckpointKind.Consume, tags, 0, 0);
+        }
+
+        writer.Points.TryDequeue(out var first).Should().BeTrue();
+        writer.Points.TryDequeue(out var second).Should().BeTrue();
+        first.ServiceNameOverride.Should().Be("worker-a");
+        second.ServiceNameOverride.Should().Be("worker-b");
+        second.ParentHash.Value.Should().Be(upstream.Value.Hash.Value);
+        downstream.Value.Hash.Value.Should().NotBe(upstream.Value.Hash.Value);
+    }
+
+    [Fact]
     public void WhenEnabled_TracksTransactions()
     {
         var dsm = GetDataStreamManager(true, out var writer);

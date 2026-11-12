@@ -35,6 +35,7 @@ namespace Datadog.Trace
     }
     public static class DataStreams
     {
+        public static System.IDisposable BeginServiceScope(string serviceName) { }
         public static void TrackTransaction(string transactionId, string checkpointName) { }
     }
     public static class HttpHeaderNames

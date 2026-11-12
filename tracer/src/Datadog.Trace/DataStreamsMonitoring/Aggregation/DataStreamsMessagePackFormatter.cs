@@ -120,7 +120,8 @@ namespace Datadog.Trace.DataStreamsMonitoring.Aggregation
             long bucketDurationNs,
             List<SerializableStatsBucket> statsBuckets,
             List<SerializableBacklogBucket> backlogsBuckets,
-            byte[] transactionData)
+            byte[] transactionData,
+            string? serviceNameOverride = null)
         {
             var hasTransactions = transactionData.Length > 0;
             var withProcessTags = _writeProcessTags && _processTags?.TagsList.Count > 0;
@@ -130,14 +131,15 @@ namespace Datadog.Trace.DataStreamsMonitoring.Aggregation
             // Should be in sync with Java
             // https://github.com/DataDog/dd-trace-java/blob/master/dd-trace-core/src/main/java/datadog/trace/core/datastreams/MsgPackDatastreamsPayloadWriter.java
             // -1 because we don't have a primary tag
-            // -1 because service name override is not supported
             bytesWritten += MessagePackBinary.WriteMapHeader(stream, 7 + (withProcessTags ? 1 : 0));
 
             bytesWritten += MessagePackBinary.WriteStringBytes(stream, EnvironmentBytes);
             bytesWritten += MessagePackBinary.WriteStringBytes(stream, _environmentValueBytes);
 
             bytesWritten += MessagePackBinary.WriteStringBytes(stream, ServiceBytes);
-            bytesWritten += MessagePackBinary.WriteStringBytes(stream, _serviceValueBytes);
+            bytesWritten += serviceNameOverride is null
+                                ? MessagePackBinary.WriteStringBytes(stream, _serviceValueBytes)
+                                : MessagePackBinary.WriteString(stream, serviceNameOverride);
 
             // We never have a primary tag currently, make sure to increase header size if/when we add it
             // offset += MessagePackBinary.WriteStringBytes(stream, _primaryTagBytes);

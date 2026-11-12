@@ -6,6 +6,7 @@
 using System;
 using System.ComponentModel;
 using Datadog.Trace.ClrProfiler.CallTarget;
+using Datadog.Trace.DataStreamsMonitoring;
 using Datadog.Trace.DuckTyping;
 using Datadog.Trace.Util.Delegates;
 
@@ -57,7 +58,7 @@ public sealed class KafkaConsumerConstructorIntegration
             if (tracer.TracerManager.DataStreamsManager.IsEnabled)
             {
                 // add handler to track committed offsets
-                consumer.OffsetsCommittedHandler = consumer.OffsetsCommittedHandler.Instrument(new OffsetsCommittedCallbacks(groupId));
+                consumer.OffsetsCommittedHandler = consumer.OffsetsCommittedHandler.Instrument(new OffsetsCommittedCallbacks(groupId, DataStreamsServiceScope.CurrentServiceName));
             }
 
             // Only config setting "group.id" is required, so assert that the value is non-null before adding to the ConsumerGroup cache

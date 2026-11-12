@@ -17,6 +17,7 @@ internal readonly struct StatsPoint
     public readonly long PathwayLatencyNs;
     public readonly long EdgeLatencyNs;
     public readonly long PayloadSizeBytes;
+    public readonly string? ServiceNameOverride;
 
     public StatsPoint(
         string[] edgeTags,
@@ -25,7 +26,8 @@ internal readonly struct StatsPoint
         long timestampNs,
         long pathwayLatencyNs,
         long edgeLatencyNs,
-        long payloadSizeBytes)
+        long payloadSizeBytes,
+        string? serviceNameOverride = null)
     {
         EdgeTags = edgeTags;
         Hash = hash;
@@ -34,5 +36,6 @@ internal readonly struct StatsPoint
         PathwayLatencyNs = pathwayLatencyNs;
         EdgeLatencyNs = edgeLatencyNs;
         PayloadSizeBytes = payloadSizeBytes;
+        ServiceNameOverride = serviceNameOverride;
     }
 }

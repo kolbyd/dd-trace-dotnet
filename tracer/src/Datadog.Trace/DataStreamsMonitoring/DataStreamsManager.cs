@@ -223,6 +223,9 @@ internal sealed class DataStreamsManager
     }
 
     public void TrackBacklog(string tags, long value)
+        => TrackBacklog(tags, value, DataStreamsServiceScope.CurrentServiceName);
+
+    public void TrackBacklog(string tags, long value, string? serviceNameOverride)
     {
         if (!IsEnabled)
         {
@@ -230,7 +233,7 @@ internal sealed class DataStreamsManager
         }
 
         var writer = Volatile.Read(ref _writer);
-        var point = new BacklogPoint(tags, value, DateTimeOffset.UtcNow.ToUnixTimeNanoseconds());
+        var point = new BacklogPoint(tags, value, DateTimeOffset.UtcNow.ToUnixTimeNanoseconds(), serviceNameOverride);
         writer?.AddBacklog(point);
     }
 
@@ -291,6 +294,7 @@ internal sealed class DataStreamsManager
 
         try
         {
+            var serviceNameOverride = DataStreamsServiceScope.CurrentServiceName;
             var previousContext = parentPathway;
             if (previousContext == null && checkpointKind == CheckpointKind.Produce)
             {
@@ -310,8 +314,11 @@ internal sealed class DataStreamsManager
             // Don't blame me, blame the fact we can't do Volatile.Read with a ulong in .NET FX...
             var nodeHashBase = new NodeHashBase(unchecked((ulong)Volatile.Read(ref _nodeHashBase)));
 
-            // Cached on the EdgeTags instance, recomputed when the base changes (settings updates).
-            var nodeHash = edgeTags.GetNodeHash(nodeHashBase);
+            // Java continues the default base hash with the override before hashing edge tags.
+            // Avoid replacing the shared EdgeTags cache for each worker service.
+            var nodeHash = serviceNameOverride is null
+                               ? edgeTags.GetNodeHash(nodeHashBase)
+                               : HashHelper.CalculateNodeHash(HashHelper.AddServiceOverride(nodeHashBase, serviceNameOverride), edgeTags.Tags);
 
             var parentHash = previousContext?.Hash ?? default;
             var pathwayHash = HashHelper.CalculatePathwayHash(nodeHash, parentHash);
@@ -330,7 +337,8 @@ internal sealed class DataStreamsManager
                     timestampNs: nowNs,
                     pathwayLatencyNs: pathwayLatencyNs,
                     edgeLatencyNs: edgeLatencyNs,
-                    payloadSizeBytes));
+                    payloadSizeBytes,
+                    serviceNameOverride));
 
             var pathway = new PathwayContext(
                 hash: pathwayHash,

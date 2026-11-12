@@ -37,9 +37,41 @@ public static class DataStreams
         TrackTransactionInternal(transactionId, checkpointName);
     }
 
+    /// <summary>
+    /// Sets the service name used for Data Streams Monitoring in the current asynchronous execution context.
+    /// </summary>
+    /// <param name="serviceName">A stable, low-cardinality Datadog service name. Do not use message or request identifiers.</param>
+    /// <returns>A scope that restores the previous service name when disposed.</returns>
+    /// <remarks>
+    /// The scope flows across awaits. Dispose nested scopes in reverse order in the same logical execution context.
+    /// This API has no effect when the automatic tracer is not installed.
+    /// </remarks>
+    public static IDisposable BeginServiceScope(string serviceName)
+    {
+        if (string.IsNullOrWhiteSpace(serviceName))
+        {
+            throw new ArgumentException("Argument is null, empty, or whitespace", nameof(serviceName));
+        }
+
+        return BeginServiceScopeInternal(serviceName);
+    }
+
+    [Instrumented]
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static IDisposable BeginServiceScopeInternal(string serviceName) => NoopServiceScope.Instance;
+
     [Instrumented]
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static void TrackTransactionInternal(string transactionId, string checkpointName)
     {
+    }
+
+    private sealed class NoopServiceScope : IDisposable
+    {
+        internal static readonly NoopServiceScope Instance = new();
+
+        public void Dispose()
+        {
+        }
     }
 }

@@ -7091,6 +7091,30 @@
     "IntegrationName": "DatadogTraceManual",
     "AssemblyName": "Datadog.Trace.Manual",
     "TargetTypeName": "Datadog.Trace.DataStreams",
+    "TargetMethodName": "BeginServiceScopeInternal",
+    "TargetReturnType": "System.IDisposable",
+    "TargetParameterTypes": [
+      "System.String"
+    ],
+    "MinimumVersion": {
+      "Item1": 3,
+      "Item2": 58,
+      "Item3": 0
+    },
+    "MaximumVersion": {
+      "Item1": 3,
+      "Item2": 65535,
+      "Item3": 65535
+    },
+    "InstrumentationTypeName": "Datadog.Trace.ClrProfiler.AutoInstrumentation.ManualInstrumentation.DataStreams.DataStreamsBeginServiceScopeIntegration",
+    "IntegrationKind": 0,
+    "IsAdoNetIntegration": false,
+    "InstrumentationCategory": 1
+  },
+  {
+    "IntegrationName": "DatadogTraceManual",
+    "AssemblyName": "Datadog.Trace.Manual",
+    "TargetTypeName": "Datadog.Trace.DataStreams",
     "TargetMethodName": "TrackTransactionInternal",
     "TargetReturnType": "System.Void",
     "TargetParameterTypes": [

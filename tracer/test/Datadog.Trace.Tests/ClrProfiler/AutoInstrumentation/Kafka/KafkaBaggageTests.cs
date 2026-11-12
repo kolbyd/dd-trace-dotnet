@@ -9,6 +9,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Datadog.Trace.ClrProfiler.AutoInstrumentation.Kafka;
 using Datadog.Trace.Configuration;
+using Datadog.Trace.DataStreamsMonitoring;
 using Datadog.Trace.TestHelpers;
 using Datadog.Trace.TestHelpers.TestTracer;
 using FluentAssertions;
@@ -304,6 +305,41 @@ public class KafkaBaggageTests
 
         Baggage.Current.Should().BeSameAs(ambientBaggage);
         ambientBaggage.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task WorkerServiceAppliesOnlyToKafkaSpans()
+    {
+        await using var tracer = CreateTracer();
+        using var worker = DataStreamsServiceScope.Begin("orders-worker");
+        using var unrelated = tracer.StartActiveInternal("application");
+        unrelated.Span.ServiceName.Should().NotBe("orders-worker");
+
+        using var consumer = CreateConsumerScope(tracer, null, hasHeaders: false);
+        consumer.Span.ServiceName.Should().Be("orders-worker");
+        KafkaHelper.CloseConsumerScope();
+
+        using var producer = KafkaHelper.CreateProducerScope(tracer, new object(), null, false, true);
+        producer.Span.ServiceName.Should().Be("orders-worker");
+        producer.Span.TraceId.Should().Be(unrelated.Span.TraceId);
+        producer.Span.Context.ParentId.Should().Be(unrelated.Span.SpanId);
+    }
+
+    [Fact]
+    public void CommitCallbackRetainsConsumerCreationService()
+    {
+        OffsetsCommittedCallbacks callback;
+        using (DataStreamsServiceScope.Begin("orders-worker"))
+        {
+            callback = new OffsetsCommittedCallbacks("group", DataStreamsServiceScope.CurrentServiceName);
+        }
+
+        using (DataStreamsServiceScope.Begin("other-worker"))
+        {
+            callback.ServiceName.Should().Be("orders-worker");
+        }
+
+        new OffsetsCommittedCallbacks("group", null).ServiceName.Should().BeNull();
     }
 
     private static ScopedTracer CreateTracer(bool createConsumerScopeEnabled = true)

@@ -1,4 +1,4 @@
-﻿// <copyright file="ManualOnlyTests.cs" company="Datadog">
+// <copyright file="ManualOnlyTests.cs" company="Datadog">
 // Unless explicitly stated otherwise all files in this repository are licensed under the Apache 2 License.
 // This product includes software developed at Datadog (https://www.datadoghq.com/). Copyright 2017 Datadog, Inc.
 // </copyright>
@@ -35,6 +35,24 @@ namespace Datadog.Trace.Tests.ManualInstrumentation;
 
 public class ManualOnlyTests
 {
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void DataStreamsServiceScopeRejectsInvalidNames(string name)
+    {
+        Action act = () => DatadogTraceManual::Datadog.Trace.DataStreams.BeginServiceScope(name);
+        act.Should().Throw<ArgumentException>().WithParameterName("serviceName");
+    }
+
+    [Fact]
+    public void DataStreamsServiceScopeIsInertWithoutInstrumentation()
+    {
+        using var scope = DatadogTraceManual::Datadog.Trace.DataStreams.BeginServiceScope("worker");
+        scope.Should().NotBeNull();
+        Datadog.Trace.DataStreamsMonitoring.DataStreamsServiceScope.CurrentServiceName.Should().BeNull();
+    }
+
     [Fact]
     public void CreatingAManualSpanDoesNotCrash()
     {

@@ -45,6 +45,9 @@ internal static class HashHelper
         return new NodeHashBase(hash);
     }
 
+    public static NodeHashBase AddServiceOverride(in NodeHashBase baseNodeHash, string serviceNameOverride)
+        => new(FnvHash64.GenerateHash(serviceNameOverride, HashVersion, baseNodeHash.Value));
+
     /// <summary>
     /// Calculates the Node Hash for a service
     /// NOTE: <paramref name="edgeTags"/> must be in correct sort order

@@ -38,6 +38,36 @@ public class DataStreamsAggregatorTests
     // https://cs.github.com/DataDog/data-streams-go/blob/6772b163707c0a8ecc8c9a3b28e0dab7e0cf58d4/datastreams/aggregator_test.go#L28
 
     [Fact]
+    public async Task ServicePartitions_AreFlushedSeparatelyAndRemoved()
+    {
+        await using var tracer = TracerHelper.Create();
+        var aggregator = CreateAggregatorWithData(tracer, T1, T2);
+        aggregator.AddBacklog(new BacklogPoint("topic:a", 1, T1, "worker-a"));
+        aggregator.AddBacklog(new BacklogPoint("topic:b", 2, T1, "worker-b"));
+        aggregator.ServiceNames.Should().BeEquivalentTo("worker-a", "worker-b");
+        using var first = new MemoryStream();
+        using var second = new MemoryStream();
+        aggregator.SerializeService(first, long.MaxValue, "worker-a").Should().BeTrue();
+        aggregator.SerializeService(second, long.MaxValue, "worker-b").Should().BeTrue();
+        aggregator.ServiceNames.Should().BeEmpty();
+        first.ToArray().Should().NotEqual(second.ToArray());
+    }
+
+    [Fact]
+    public async Task ServicePartitions_BoundCardinalityAndCountDrops()
+    {
+        await using var tracer = TracerHelper.Create();
+        var aggregator = CreateAggregatorWithData(tracer, T1, T2);
+        for (var i = 0; i < 1001; i++)
+        {
+            aggregator.AddBacklog(new BacklogPoint("topic:a", 1, T1, "worker-" + i));
+        }
+
+        aggregator.ServiceNames.Should().HaveCount(1000);
+        aggregator.PointsDropped.Should().Be(1);
+    }
+
+    [Fact]
     public async Task Aggregator_DoesNotFlushCurrentStats()
     {
         await using var tracer = TracerHelper.Create();

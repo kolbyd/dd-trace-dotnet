@@ -149,6 +149,37 @@ public class DataStreamsWriterTests
     }
 
     [Fact]
+    public async Task WritesSeparatePayloadsForServiceOverrides()
+    {
+        var api = new StubApi();
+        var writer = CreateWriter(api, out var discovery, 100_000_000);
+        TriggerSupportUpdate(discovery, isSupported: true);
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeNanoseconds();
+        writer.Add(new StatsPoint(["type:default"], new PathwayHash(11), new PathwayHash(10), timestamp, 0, 0, 1));
+        writer.Add(new StatsPoint(["type:a"], new PathwayHash(21), new PathwayHash(20), timestamp, 0, 0, 1, "worker-a"));
+        writer.Add(new StatsPoint(["type:b"], new PathwayHash(31), new PathwayHash(30), timestamp, 0, 0, 1, "worker-b"));
+        writer.AddBacklog(new BacklogPoint("topic:default", 1, timestamp));
+        writer.AddBacklog(new BacklogPoint("topic:a", 2, timestamp, "worker-a"));
+        writer.AddBacklog(new BacklogPoint("topic:b", 3, timestamp, "worker-b"));
+        await writer.DisposeAsync();
+
+        var payloads = await DeserializePayloadsAsync(api);
+        payloads.Should().HaveCount(3);
+        var defaultStats = payloads.Single(x => x.Service == Service).Stats.Where(b => b.Stats != null).SelectMany(b => b.Stats);
+        var aStats = payloads.Single(x => x.Service == "worker-a").Stats.Where(b => b.Stats != null).SelectMany(b => b.Stats);
+        var bStats = payloads.Single(x => x.Service == "worker-b").Stats.Where(b => b.Stats != null).SelectMany(b => b.Stats);
+        defaultStats.Should().OnlyContain(x => x.Hash == 11 && x.ParentHash == 10 && x.EdgeTags.Contains("type:default"));
+        aStats.Should().OnlyContain(x => x.Hash == 21 && x.ParentHash == 20 && x.EdgeTags.Contains("type:a"));
+        bStats.Should().OnlyContain(x => x.Hash == 31 && x.ParentHash == 30 && x.EdgeTags.Contains("type:b"));
+        defaultStats.Should().HaveCount(2);
+        aStats.Should().HaveCount(2);
+        bStats.Should().HaveCount(2);
+        payloads.Should().ContainSingle(x => x.Service == Service && x.Stats.Where(b => b.Backlogs != null).SelectMany(b => b.Backlogs).Any(b => b.Value == 1));
+        payloads.Should().ContainSingle(x => x.Service == "worker-a" && x.Stats.Where(b => b.Backlogs != null).SelectMany(b => b.Backlogs).Any(b => b.Value == 2));
+        payloads.Should().ContainSingle(x => x.Service == "worker-b" && x.Stats.Where(b => b.Backlogs != null).SelectMany(b => b.Backlogs).Any(b => b.Value == 3));
+    }
+
+    [Fact]
     public async Task DoesNotCrashWhenWritingAStatsPointFails()
     {
         var bucketDurationMs = 100_000_000;
