@@ -315,7 +315,7 @@ internal sealed class DataStreamsManager
             // Avoid replacing the shared EdgeTags cache for each worker service.
             var nodeHash = serviceNameOverride is null
                                ? edgeTags.GetNodeHash(nodeHashBase)
-                               : HashHelper.CalculateNodeHash(HashHelper.AddServiceOverride(nodeHashBase, serviceNameOverride), edgeTags.Tags);
+                               : HashHelper.CalculateNodeHash(HashHelper.AddServiceOverride(in nodeHashBase, serviceNameOverride), edgeTags.Tags);
 
             var parentHash = previousContext?.Hash ?? default;
             var pathwayHash = HashHelper.CalculatePathwayHash(nodeHash, parentHash);

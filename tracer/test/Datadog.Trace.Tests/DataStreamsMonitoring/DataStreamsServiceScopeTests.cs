@@ -39,7 +39,7 @@ public class DataStreamsServiceScopeTests
     public async Task ConcurrentWorkersAndDisposalAreIsolated()
     {
         using var parent = DataStreamsServiceScope.Begin("parent");
-        var tasks = new[] { Worker("first"), Worker("second") };
+        Task[] tasks = [Worker("first"), Worker("second")];
         await Task.WhenAll(tasks);
         DataStreamsServiceScope.CurrentServiceName.Should().Be("parent");
 

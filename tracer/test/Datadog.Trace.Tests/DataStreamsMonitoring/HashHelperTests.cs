@@ -62,7 +62,7 @@ public class HashHelperTests
     public void ServiceOverrideIsHashedAfterBaseAndBeforeEdges()
     {
         var baseHash = HashHelper.CalculateNodeHashBase("service", "env", null, null, null);
-        var scopedBase = HashHelper.AddServiceOverride(baseHash, "worker");
+        var scopedBase = HashHelper.AddServiceOverride(in baseHash, "worker");
         var actual = HashHelper.CalculateNodeHash(scopedBase, ["type:kafka"]);
         actual.Value.Should().Be(FnvHash64.GenerateHash("serviceenvworkertype:kafka", FnvHash64.Version.V1));
     }
